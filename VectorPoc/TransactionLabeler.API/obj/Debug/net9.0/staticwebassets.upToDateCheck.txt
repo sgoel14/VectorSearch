@@ -1,0 +1,6 @@
+wwwroot\app.js
+wwwroot\index.html
+wwwroot\styles.css
+C:\VectorPOCSQLDB\VectorPoc\TransactionLabeler.API\wwwroot\app.js
+C:\VectorPOCSQLDB\VectorPoc\TransactionLabeler.API\wwwroot\styles.css
+C:\VectorPOCSQLDB\VectorPoc\TransactionLabeler.API\wwwroot\index.html

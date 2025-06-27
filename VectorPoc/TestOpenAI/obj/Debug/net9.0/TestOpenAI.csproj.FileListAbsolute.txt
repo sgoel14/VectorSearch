@@ -1,0 +1,5 @@
+C:\VectorPoc\TestOpenAI\obj\Debug\net9.0\TestOpenAI.csproj.AssemblyReference.cache
+C:\VectorPoc\TestOpenAI\obj\Debug\net9.0\TestOpenAI.GeneratedMSBuildEditorConfig.editorconfig
+C:\VectorPoc\TestOpenAI\obj\Debug\net9.0\TestOpenAI.AssemblyInfoInputs.cache
+C:\VectorPoc\TestOpenAI\obj\Debug\net9.0\TestOpenAI.AssemblyInfo.cs
+C:\VectorPoc\TestOpenAI\obj\Debug\net9.0\TestOpenAI.csproj.CoreCompileInputs.cache
