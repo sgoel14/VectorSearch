@@ -1,0 +1,54 @@
+[
+  {
+    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
+    "Method": "UpdateAllInversBankTransactionEmbeddings",
+    "RelativePath": "api/Transactions/update-all-invers-embeddings",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
+    "Method": "UpdateAllPersistentBankStatementEmbeddings",
+    "RelativePath": "api/Transactions/update-all-persistent-embeddings",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
+    "Method": "VectorSearch",
+    "RelativePath": "api/Transactions/vector-search",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "query",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
+    "Method": "VectorSearchSql",
+    "RelativePath": "api/Transactions/vector-search-sql",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "query",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  }
+]
