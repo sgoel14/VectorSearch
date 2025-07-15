@@ -1,6 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using TransactionLabeler.API.Data;
 using TransactionLabeler.API.Services;
+using System.ClientModel;
+using Azure;
+using Azure.AI.OpenAI;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +32,21 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // Add services
 builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
 builder.Services.AddScoped<ITransactionService, TransactionService>();
+
+// Configure Microsoft.Extensions.AI ChatClient for function calling
+builder.Services.AddSingleton<IChatClient>(provider =>
+{
+    var configuration = provider.GetRequiredService<IConfiguration>();
+    var azureClient = new AzureOpenAIClient(
+        new Uri(configuration["AzureOpenAI:Endpoint"]!),
+        new ApiKeyCredential(configuration["AzureOpenAI:Key"]!));
+    return azureClient.AsChatClient(configuration["AzureOpenAI:ChatDeploymentName"]!);
+});
+
+builder.Services.AddScoped<FinancialTools>(provider =>
+    new FinancialTools(
+        provider.GetRequiredService<ITransactionService>(),
+        provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")!));
 
 var app = builder.Build();
 

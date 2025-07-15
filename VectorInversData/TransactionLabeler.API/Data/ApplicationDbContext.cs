@@ -34,8 +34,30 @@ namespace TransactionLabeler.API.Data
                 .ToTable("inversbanktransaction")
                 .Property(t => t.Amount)
                 .HasColumnType("decimal(19,5)");
+            
+            // Map C# properties to correct SQL column names
             modelBuilder.Entity<InversBankTransaction>()
-                .Property(t => t.Embedding)
+                .Property(t => t.AfBij)
+                .HasColumnName("af_bij");
+            modelBuilder.Entity<InversBankTransaction>()
+                .Property(t => t.TransactionIdentifierAccountNumber)
+                .HasColumnName("transactionidentifier_accountnumber");
+            
+            // Configure VECTOR columns for embeddings
+            modelBuilder.Entity<InversBankTransaction>()
+                .Property(t => t.ContentEmbedding)
+                .HasColumnType("VECTOR(1536)");
+            modelBuilder.Entity<InversBankTransaction>()
+                .Property(t => t.AmountEmbedding)
+                .HasColumnType("VECTOR(1536)");
+            modelBuilder.Entity<InversBankTransaction>()
+                .Property(t => t.DateEmbedding)
+                .HasColumnType("VECTOR(1536)");
+            modelBuilder.Entity<InversBankTransaction>()
+                .Property(t => t.CategoryEmbedding)
+                .HasColumnType("VECTOR(1536)");
+            modelBuilder.Entity<InversBankTransaction>()
+                .Property(t => t.CombinedEmbedding)
                 .HasColumnType("VECTOR(1536)");
 
             modelBuilder.Entity<RgsMapping>()

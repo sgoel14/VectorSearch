@@ -2,174 +2,106 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Transaction Labeler</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="styles.css" rel="stylesheet">
+    <title>Transaction Analysis Tools</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', Arial, sans-serif;
+            background: linear-gradient(120deg, #f0f4f8 0%, #e0e7ef 100%);
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: #fff;
+            border-radius: 18px;
+            box-shadow: 0 8px 32px rgba(60,72,100,0.12);
+            padding: 2.5em 2em 2em 2em;
+            max-width: 600px;
+            width: 100%;
+            margin: 2em auto;
+            text-align: center;
+        }
+        h1 {
+            font-size: 2em;
+            font-weight: 600;
+            color: #2d3a4a;
+            margin-bottom: 0.5em;
+        }
+        .subtitle {
+            color: #6b7280;
+            margin-bottom: 2em;
+            font-size: 1.1em;
+        }
+        .tools-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5em;
+            margin-top: 2em;
+        }
+        .tool-card {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 1.5em;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .tool-card:hover {
+            border-color: #6366f1;
+            box-shadow: 0 4px 16px rgba(99,102,241,0.12);
+            transform: translateY(-2px);
+        }
+        .tool-card h3 {
+            margin: 0 0 0.5em 0;
+            color: #2d3a4a;
+            font-size: 1.2em;
+        }
+        .tool-card p {
+            margin: 0;
+            color: #6b7280;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        .icon {
+            font-size: 2em;
+            margin-bottom: 0.5em;
+            color: #6366f1;
+        }
+        @media (max-width: 600px) {
+            .tools-grid {
+                grid-template-columns: 1fr;
+            }
+            .container {
+                padding: 1.5em 1em;
+            }
+        }
+    </style>
 </head>
 <body>
-    <div class="app-container">
-        <!-- Header -->
-        <header class="app-header">
             <div class="container">
-                <div class="row align-items-center">
-                    <div class="col-md-6">
-                        <h1 class="app-title">
-                            <i class="fas fa-robot text-primary me-2"></i>
-                            AI Transaction Labeler
-                        </h1>
-                        <p class="app-subtitle">Intelligent transaction categorization powered by AI</p>
-                    </div>
-                    <div class="col-md-6 text-end">
-                        <div class="stats-cards">
-                            <div class="stat-card">
-                                <i class="fas fa-chart-line text-success"></i>
-                                <span class="stat-number" id="totalTransactions">0</span>
-                                <span class="stat-label">Total</span>
-                            </div>
-                            <div class="stat-card">
-                                <i class="fas fa-tags text-info"></i>
-                                <span class="stat-number" id="categorizedCount">0</span>
-                                <span class="stat-label">Categorized</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </header>
-
-        <!-- Main Content -->
-        <main class="app-main">
-            <div class="container">
-                <div class="row g-4">
-                    <!-- Add Transaction Card -->
-                    <div class="col-lg-5">
-                        <div class="card shadow-sm border-0">
-                            <div class="card-header bg-primary text-white">
-                                <h5 class="card-title mb-0">
-                                    <i class="fas fa-plus-circle me-2"></i>
-                                    Add New Transaction
-                                </h5>
-                            </div>
-                            <div class="card-body">
-                                <form id="transactionForm" class="needs-validation" novalidate>
-                                    <div class="mb-3">
-                                        <label for="description" class="form-label">
-                                            <i class="fas fa-file-text me-1"></i>
-                                            Description
-                                        </label>
-                                        <input type="text" class="form-control form-control-lg" id="description" 
-                                               placeholder="e.g., Peugeot car payment" required>
-                                        <div class="form-text">Describe your transaction in detail for better AI categorization</div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="amount" class="form-label">
-                                                    <i class="fas fa-dollar-sign me-1"></i>
-                                                    Amount
-                                                </label>
-                                                <div class="input-group">
-                                                    <span class="input-group-text">$</span>
-                                                    <input type="number" class="form-control" id="amount" 
-                                                           step="0.01" placeholder="0.00" required>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="transactionDate" class="form-label">
-                                                    <i class="fas fa-calendar me-1"></i>
-                                                    Date
-                                                </label>
-                                                <input type="date" class="form-control" id="transactionDate" required>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <button type="submit" class="btn btn-primary btn-lg w-100">
-                                        <i class="fas fa-magic me-2"></i>
-                                        Add & Categorize
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
-
-                        <!-- AI Insights Card -->
-                        <div class="card shadow-sm border-0 mt-4">
-                            <div class="card-header bg-info text-white">
-                                <h6 class="card-title mb-0">
-                                    <i class="fas fa-brain me-2"></i>
-                                    AI Insights
-                                </h6>
-                            </div>
-                            <div class="card-body">
-                                <div id="aiInsights" class="ai-insights">
-                                    <div class="insight-item">
-                                        <i class="fas fa-lightbulb text-warning"></i>
-                                        <span>Type a description to see AI-powered categorization suggestions</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Similar Transactions Card -->
-                    <div class="col-lg-7">
-                        <div class="card shadow-sm border-0">
-                            <div class="card-header bg-success text-white">
-                                <h5 class="card-title mb-0">
-                                    <i class="fas fa-search me-2"></i>
-                                    Similar Transactions
-                                </h5>
-                            </div>
-                            <div class="card-body">
-                                <div id="similarTransactions" class="transaction-list">
-                                    <div class="empty-state">
-                                        <i class="fas fa-search text-muted"></i>
-                                        <p>Type a description to see similar transactions...</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Recent Transactions Card -->
-                        <div class="card shadow-sm border-0 mt-4">
-                            <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
-                                <h5 class="card-title mb-0">
-                                    <i class="fas fa-history me-2"></i>
-                                    Recent Transactions
-                                </h5>
-                                <button class="btn btn-sm btn-outline-light" onclick="loadRecentTransactions()">
-                                    <i class="fas fa-sync-alt"></i>
-                                </button>
-                            </div>
-                            <div class="card-body">
-                                <div id="recentTransactions" class="transaction-list">
-                                    <div class="empty-state">
-                                        <i class="fas fa-receipt text-muted"></i>
-                                        <p>No transactions yet...</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </main>
-
-        <!-- Loading Overlay -->
-        <div id="loadingOverlay" class="loading-overlay d-none">
-            <div class="loading-spinner">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-                <p class="mt-2">Processing with AI...</p>
-            </div>
+        <h1>Transaction Analysis Tools</h1>
+        <div class="subtitle">Choose your preferred way to analyze financial transactions</div>
+        
+        <div class="tools-grid">
+            <a href="vector-search.html" class="tool-card">
+                <div class="icon">🔍</div>
+                <h3>Vector Search</h3>
+                <p>Semantic search using AI embeddings. Find similar transactions based on description, amount, date, and category.</p>
+            </a>
+            
+            <a href="intelligent-chat.html" class="tool-card">
+                <div class="icon">💬</div>
+                <h3>Intelligent Chat</h3>
+                <p>Ask natural language questions about your transactions. Get AI-powered insights and analysis.</p>
+            </a>
         </div>
     </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="app.js"></script>
 </body>
 </html> 

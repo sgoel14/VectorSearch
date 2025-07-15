@@ -107,5 +107,25 @@ namespace TransactionLabeler.API.Controllers
 
             return Ok(finalResults);
         }
+
+        [HttpPost("intelligent-query-with-tools")]
+        public async Task<IActionResult> IntelligentQueryWithTools([FromBody] string query)
+        {
+            try
+            {
+                string connectionString = _configuration.GetConnectionString("DefaultConnection");
+                var result = await _transactionService.ProcessIntelligentQueryWithToolsAsync(connectionString, query);
+                
+                return Ok(new { 
+                    query = query,
+                    response = result,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
     }
-} 
+}  

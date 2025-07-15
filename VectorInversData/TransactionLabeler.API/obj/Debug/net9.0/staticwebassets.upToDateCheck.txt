@@ -1,0 +1,10 @@
+wwwroot\app.js
+wwwroot\index.html
+wwwroot\intelligent-chat.html
+wwwroot\styles.css
+wwwroot\vector-search.html
+C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\wwwroot\index.html
+C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\wwwroot\intelligent-chat.html
+C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\wwwroot\styles.css
+C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\wwwroot\app.js
+C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\wwwroot\vector-search.html

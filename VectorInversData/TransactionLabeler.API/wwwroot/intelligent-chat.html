@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Intelligent Chat Query</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', Arial, sans-serif;
+            background: linear-gradient(120deg, #f0f4f8 0%, #e0e7ef 100%);
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: #fff;
+            border-radius: 18px;
+            box-shadow: 0 8px 32px rgba(60,72,100,0.12);
+            padding: 2.5em 2em 2em 2em;
+            max-width: 600px;
+            width: 100%;
+            margin: 2em auto;
+        }
+        h1 {
+            font-size: 1.7em;
+            font-weight: 600;
+            color: #2d3a4a;
+            margin-bottom: 0.5em;
+            text-align: center;
+        }
+        .subtitle {
+            text-align: center;
+            color: #6b7280;
+            margin-bottom: 2em;
+            font-size: 0.9em;
+        }
+        .search-row {
+            display: flex;
+            gap: 0.5em;
+            margin-bottom: 1.5em;
+        }
+        #query {
+            flex: 1;
+            padding: 0.75em 1em;
+            border: 1.5px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 1em;
+            background: #f9fafb;
+            transition: border 0.2s;
+        }
+        #query:focus {
+            border-color: #6366f1;
+            outline: none;
+        }
+        button {
+            background: linear-gradient(90deg, #6366f1 0%, #60a5fa 100%);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 0.75em 1.5em;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(99,102,241,0.08);
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        button:hover {
+            background: linear-gradient(90deg, #4f46e5 0%, #2563eb 100%);
+            box-shadow: 0 4px 16px rgba(99,102,241,0.12);
+        }
+        #results {
+            margin-top: 1.5em;
+        }
+        .result {
+            background: #f3f4f6;
+            border-radius: 10px;
+            padding: 1.2em 1em 1em 1em;
+            margin-bottom: 1.1em;
+            box-shadow: 0 2px 8px rgba(60,72,100,0.06);
+            transition: box-shadow 0.2s;
+        }
+        .result:hover {
+            box-shadow: 0 6px 18px rgba(99,102,241,0.13);
+        }
+        .result b {
+            color: #6366f1;
+            font-weight: 600;
+        }
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 2em;
+        }
+        .spinner {
+            border: 4px solid #e5e7eb;
+            border-top: 4px solid #6366f1;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            animation: spin 1s linear infinite;
+            margin-right: 1em;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .chat-response {
+            background: #e0f2fe;
+            border-left: 4px solid #6366f1;
+            padding: 1em;
+            border-radius: 8px;
+            margin-top: 1em;
+            white-space: pre-wrap;
+            font-family: 'Inter', Arial, sans-serif;
+        }
+        .examples {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 1em;
+            margin-top: 1em;
+            font-size: 0.9em;
+            color: #64748b;
+        }
+        .examples h4 {
+            margin: 0 0 0.5em 0;
+            color: #475569;
+        }
+        .examples ul {
+            margin: 0;
+            padding-left: 1.5em;
+        }
+        @media (max-width: 600px) {
+            .container { padding: 1.2em 0.5em; }
+            h1 { font-size: 1.2em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Intelligent Chat Query</h1>
+        <div class="subtitle">Ask natural language questions about your financial transactions</div>
+        <div class="search-row">
+            <input type="text" id="query" placeholder="e.g., Find duplicate payments of $500 on March 15th...">
+            <button onclick="search()">Ask</button>
+        </div>
+        <div class="examples">
+            <h4>Example queries for salary duplicate detection:</h4>
+            <ul>
+                <li>"Find double salary payments in January 2024"</li>
+                <li>"Check for duplicate salary payments in March"</li>
+                <li>"Are there any duplicate salary payments to the same person?"</li>
+                <li>"Find duplicate salary payments between January 1st and January 31st"</li>
+                <li>"Check for double salary payments in February 2024"</li>
+                <li>"Find duplicate salary payments of $5000 in January"</li>
+                <li>"Are there any duplicate payroll payments this month?"</li>
+            </ul>
+        </div>
+        <div id="results"></div>
+    </div>
+    <script>
+        function showLoading() {
+            document.getElementById('results').innerHTML = `<div class="loading"><div class="spinner"></div>Processing your query...</div>`;
+        }
+        function showError(msg) {
+            document.getElementById('results').innerHTML = `<div style='color:#dc2626;padding:1em;text-align:center;'>${msg}</div>`;
+        }
+        async function search() {
+            const query = document.getElementById('query').value.trim();
+            if (!query) {
+                showError('Please enter a question to ask.');
+                return;
+            }
+            showLoading();
+            try {
+                const response = await fetch('/api/transactions/intelligent-query-with-tools', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(query)
+                });
+                if (!response.ok) throw new Error('Server error');
+                const result = await response.json();
+                
+                document.getElementById('results').innerHTML = `
+                    <div class="result">
+                        <div><b>Your Query:</b> ${result.query}</div>
+                        <div class="chat-response"><b>Response:</b> ${result.response}</div>
+                        <div style="margin-top: 0.5em; font-size: 0.8em; color: #6b7280;">
+                            Processed at: ${new Date(result.timestamp).toLocaleString()}
+                        </div>
+                    </div>
+                `;
+            } catch (e) {
+                showError('An error occurred while processing your query.');
+            }
+        }
+        document.getElementById('query').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') search();
+        });
+    </script>
+</body>
+</html> 

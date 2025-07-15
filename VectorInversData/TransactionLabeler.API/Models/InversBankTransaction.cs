@@ -19,7 +19,8 @@ namespace TransactionLabeler.API.Models
         public string? CategoryId { get; set; }
         public string? CategoryName { get; set; }
         public string? BusinessId { get; set; }
-        
+        public string? CustomerName { get; set; }
+
         // Multiple embedding columns for different query types
         public string? Embedding { get; set; } // Legacy - keep for backward compatibility (stored as JSON string)
         
