@@ -683,8 +683,6 @@ C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\rjs
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\rjsmcshtml.dswa.cache.json
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\scopedcss\bundle\TransactionLabeler.API.styles.css
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\compressed\2g4ykkerta-2ab5m2gqxb.gz
-C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\compressed\22mydwroqx-k5lsbaq493.gz
-C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\compressed\r52njjhc5e-98bph50cyh.gz
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\compressed\96h6z5u8i0-tljfb9jvch.gz
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\compressed\zu93zjaqme-hsbmgnyosx.gz
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\staticwebassets.build.json
@@ -853,3 +851,5 @@ C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\bin\Debug\net9.0-new
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\bin\Debug\net9.0-new\runtimes\win\lib\net9.0\System.Diagnostics.EventLog.dll
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\bin\Debug\net9.0-new\runtimes\win\lib\net9.0\System.Security.Cryptography.Pkcs.dll
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\staticwebassets.upToDateCheck.txt
+C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\compressed\22mydwroqx-hjxvwqiic0.gz
+C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\compressed\r52njjhc5e-ccgtso8j45.gz

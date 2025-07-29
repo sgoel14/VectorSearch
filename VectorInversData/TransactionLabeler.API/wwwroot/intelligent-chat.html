@@ -143,20 +143,29 @@
         <h1>Intelligent Chat Query</h1>
         <div class="subtitle">Ask natural language questions about your financial transactions</div>
         <div class="search-row">
-            <input type="text" id="query" placeholder="e.g., Find duplicate payments of $500 on March 15th...">
+            <input type="text" id="query" placeholder="e.g., Top 10 transactions for marketing costs, Show me office expenditure expenses, What are my top expenses for 2024...">
             <button onclick="search()">Ask</button>
         </div>
         <div class="examples">
-            <h4>Example queries for salary duplicate detection:</h4>
+            <h4>Example queries:</h4>
             <ul>
-                <li>"Find double salary payments in January 2024"</li>
-                <li>"Check for duplicate salary payments in March"</li>
-                <li>"Are there any duplicate salary payments to the same person?"</li>
-                <li>"Find duplicate salary payments between January 1st and January 31st"</li>
-                <li>"Check for double salary payments in February 2024"</li>
-                <li>"Find duplicate salary payments of $5000 in January"</li>
-                <li>"Are there any duplicate payroll payments this month?"</li>
+                <li><strong>Expense Categories:</strong> "What are my top 3 expenses for January 2024?"</li>
+                <li><strong>Category Transactions:</strong> "Top 10 transactions for marketing costs"</li>
+                <li><strong>Category Transactions:</strong> "Show me office expenditure expenses"</li>
+                <li><strong>Category Transactions:</strong> "Top 5 transactions for tax related costs"</li>
+                <li><strong>Category Transactions:</strong> "Show me travel expenses for Q1 2024"</li>
+                <li><strong>Category Transactions:</strong> "Top transactions for restaurant costs in 2024"</li>
+                <li><strong>Category Transactions:</strong> "Show me utility expenses"</li>
+                <li><strong>Category Transactions:</strong> "Top transactions for advertising costs"</li>
+                <li><strong>Category Transactions:</strong> "Show me legal expenses"</li>
+                <li><strong>Category Transactions:</strong> "Top transactions for insurance costs"</li>
+                <li><strong>Duplicate Detection:</strong> "Find double salary payments in January 2024"</li>
+                <li><strong>Date Range:</strong> "Show transactions between March 1st and March 31st"</li>
+                <li><strong>Unusual Transactions:</strong> "Find unusual transactions above 2 standard deviations"</li>
             </ul>
+            <p style="margin-top: 1em; font-size: 0.85em; color: #059669;">
+                <strong>💡 Tip:</strong> You can ask follow-up questions like "Show me the top transactions for marketing costs" or "Show me office expenditure expenses" after getting expense categories.
+            </p>
         </div>
         <div id="results"></div>
     </div>
@@ -164,9 +173,11 @@
         function showLoading() {
             document.getElementById('results').innerHTML = `<div class="loading"><div class="spinner"></div>Processing your query...</div>`;
         }
+        
         function showError(msg) {
             document.getElementById('results').innerHTML = `<div style='color:#dc2626;padding:1em;text-align:center;'>${msg}</div>`;
         }
+        
         async function search() {
             const query = document.getElementById('query').value.trim();
             if (!query) {
@@ -192,10 +203,14 @@
                         </div>
                     </div>
                 `;
+                
+                // Clear the input for the next query
+                document.getElementById('query').value = '';
             } catch (e) {
                 showError('An error occurred while processing your query.');
             }
         }
+        
         document.getElementById('query').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') search();
         });

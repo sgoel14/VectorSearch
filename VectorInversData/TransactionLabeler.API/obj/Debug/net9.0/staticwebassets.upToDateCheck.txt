@@ -1,6 +1,6 @@
 wwwroot\app.js
-wwwroot\index.html
 wwwroot\intelligent-chat.html
+wwwroot\index.html
 wwwroot\styles.css
 wwwroot\vector-search.html
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\wwwroot\index.html
