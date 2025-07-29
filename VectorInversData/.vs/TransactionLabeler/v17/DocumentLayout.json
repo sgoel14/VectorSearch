@@ -7,16 +7,8 @@
       "RelativeMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|solutionrelative:transactionlabeler.api\\services\\transactionservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|c:\\git\\vectorsearch\\vectorinversdata\\transactionlabeler.api\\services\\financialtools.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|solutionrelative:transactionlabeler.api\\services\\financialtools.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|c:\\git\\vectorsearch\\vectorinversdata\\transactionlabeler.api\\controllers\\transactionscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|solutionrelative:transactionlabeler.api\\controllers\\transactionscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|c:\\git\\vectorsearch\\vectorinversdata\\transactionlabeler.api\\services\\scalabletransactionservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|solutionrelative:transactionlabeler.api\\services\\scalabletransactionservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|c:\\git\\vectorsearch\\vectorinversdata\\transactionlabeler.api\\wwwroot\\intelligent-chat.html||{40D31677-CBC0-4297-A9EF-89D907823A98}",
@@ -30,7 +22,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 6,
+          "SelectedChildIndex": 5,
           "Children": [
             {
               "$type": "Bookmark",
@@ -54,32 +46,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "ScalableTransactionService.cs",
-              "DocumentMoniker": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Services\\ScalableTransactionService.cs",
-              "RelativeDocumentMoniker": "TransactionLabeler.API\\Services\\ScalableTransactionService.cs",
-              "ToolTip": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Services\\ScalableTransactionService.cs",
-              "RelativeToolTip": "TransactionLabeler.API\\Services\\ScalableTransactionService.cs",
-              "ViewState": "AgIAAAwAAAAAAAAAAAAuwBQAAAAqAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-07-16T14:46:10.637Z"
-            },
-            {
-              "$type": "Document",
               "DocumentIndex": 0,
               "Title": "TransactionService.cs",
               "DocumentMoniker": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Services\\TransactionService.cs",
               "RelativeDocumentMoniker": "TransactionLabeler.API\\Services\\TransactionService.cs",
               "ToolTip": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Services\\TransactionService.cs",
               "RelativeToolTip": "TransactionLabeler.API\\Services\\TransactionService.cs",
-              "ViewState": "AgIAAGUFAAAAAAAAAAAAwH0FAAA2AAAAAAAAAA==",
+              "ViewState": "AgIAAFcBAAAAAAAAAAAwwHIBAACRAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-07-03T08:21:46.262Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 1,
               "Title": "TransactionsController.cs",
               "DocumentMoniker": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Controllers\\TransactionsController.cs",
               "RelativeDocumentMoniker": "TransactionLabeler.API\\Controllers\\TransactionsController.cs",
@@ -87,11 +67,12 @@
               "RelativeToolTip": "TransactionLabeler.API\\Controllers\\TransactionsController.cs",
               "ViewState": "AgIAAEsAAAAAAAAAAAAtwFIAAABKAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-07-14T15:27:51.558Z"
+              "WhenOpened": "2025-07-14T15:27:51.558Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 2,
               "Title": "intelligent-chat.html",
               "DocumentMoniker": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\wwwroot\\intelligent-chat.html",
               "RelativeDocumentMoniker": "TransactionLabeler.API\\wwwroot\\intelligent-chat.html",
@@ -100,18 +81,6 @@
               "ViewState": "AgIAAGkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001512|",
               "WhenOpened": "2025-07-14T11:11:36.01Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "FinancialTools.cs",
-              "DocumentMoniker": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Services\\FinancialTools.cs",
-              "RelativeDocumentMoniker": "TransactionLabeler.API\\Services\\FinancialTools.cs",
-              "ToolTip": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Services\\FinancialTools.cs",
-              "RelativeToolTip": "TransactionLabeler.API\\Services\\FinancialTools.cs",
-              "ViewState": "AgIAAA8BAAAAAAAAAAAQwB8BAAAMAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-07-14T10:22:50.389Z"
             }
           ]
         },

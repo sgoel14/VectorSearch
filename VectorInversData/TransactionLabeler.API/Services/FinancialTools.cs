@@ -18,249 +18,47 @@ namespace TransactionLabeler.API.Services
             _connectionString = connectionString;
         }
 
-        [Description("Finds potential duplicate bank transactions. Can be used for specific amount/date duplicates or salary-specific duplicates within date ranges. For salary duplicates, use salaryOnly=true with startDate/endDate. For specific duplicates, use amount and transactionDate. Useful for detecting double payments, duplicate invoices, or erroneous transactions.")]
-        public async Task<List<TransactionResult>> FindDuplicatePayments(
-            decimal? amount = null,
-            object? transactionDate = null,
-            string? description = null,
-            string? bankAccountNumber = null,
-            object? startDate = null,
-            object? endDate = null,
-            bool salaryOnly = false)
+        /// <summary>
+        /// Helper method to convert various date input types to DateTime?
+        /// </summary>
+        private static DateTime? ParseDateParameter(object? dateParameter)
         {
-            // Convert string dates to DateTime? if needed
-            DateTime? parsedTransactionDate = null;
-            DateTime? parsedStartDate = null;
-            DateTime? parsedEndDate = null;
-            
-            if (transactionDate != null)
-            {
-                if (transactionDate is string transactionDateStr && DateTime.TryParse(transactionDateStr, out var parsedTransaction))
-                {
-                    parsedTransactionDate = parsedTransaction;
-                }
-                else if (transactionDate is DateTime transactionDateDt)
-                {
-                    parsedTransactionDate = transactionDateDt;
-                }
-                else if (transactionDate.GetType().Name == "JsonElement")
-                {
-                    // Handle JsonElement from JSON deserialization
-                    var jsonElement = (System.Text.Json.JsonElement)transactionDate;
-                    if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.String)
-                    {
-                        var dateStr = jsonElement.GetString();
-                        if (DateTime.TryParse(dateStr, out var parsedTransactionFromJson))
-                        {
-                            parsedTransactionDate = parsedTransactionFromJson;
-                        }
-                    }
-                }
-            }
-            
-            if (startDate != null)
-            {
-                if (startDate is string startDateStr && DateTime.TryParse(startDateStr, out var parsedStart))
-                {
-                    parsedStartDate = parsedStart;
-                }
-                else if (startDate is DateTime startDateDt)
-                {
-                    parsedStartDate = startDateDt;
-                }
-                else if (startDate.GetType().Name == "JsonElement")
-                {
-                    // Handle JsonElement from JSON deserialization
-                    var jsonElement = (System.Text.Json.JsonElement)startDate;
-                    if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.String)
-                    {
-                        var dateStr = jsonElement.GetString();
-                        if (DateTime.TryParse(dateStr, out var parsedStartFromJson))
-                        {
-                            parsedStartDate = parsedStartFromJson;
-                        }
-                    }
-                }
-            }
-            
-            if (endDate != null)
-            {
-                if (endDate is string endDateStr && DateTime.TryParse(endDateStr, out var parsedEnd))
-                {
-                    parsedEndDate = parsedEnd;
-                }
-                else if (endDate is DateTime endDateDt)
-                {
-                    parsedEndDate = endDateDt;
-                }
-                else if (endDate.GetType().Name == "JsonElement")
-                {
-                    // Handle JsonElement from JSON deserialization
-                    var jsonElement = (System.Text.Json.JsonElement)endDate;
-                    if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.String)
-                    {
-                        var dateStr = jsonElement.GetString();
-                        if (DateTime.TryParse(dateStr, out var parsedEndFromJson))
-                        {
-                            parsedEndDate = parsedEndFromJson;
-                        }
-                    }
-                }
-            }
-            
-            return await _transactionService.FindDuplicatePaymentsAsync(_connectionString, amount, parsedTransactionDate, description, bankAccountNumber, parsedStartDate, parsedEndDate, salaryOnly);
-        }
+            if (dateParameter == null)
+                return null;
 
-        [Description("Finds transactions within a specific date range with optional filtering by amount, description, or transaction type. Useful for period analysis and spending pattern identification.")]
-        public async Task<List<TransactionResult>> FindTransactionsInDateRange(
-            object startDate,
-            object endDate,
-            decimal? minAmount = null,
-            decimal? maxAmount = null,
-            string? description = null,
-            string? transactionType = null)
-        {
-            // Convert string dates to DateTime if needed
-            DateTime parsedStartDate;
-            DateTime parsedEndDate;
-            
-            if (startDate is string startDateStr && DateTime.TryParse(startDateStr, out var parsedStart))
+            if (dateParameter is string dateStr && DateTime.TryParse(dateStr, out var parsedDate))
             {
-                parsedStartDate = parsedStart;
+                return parsedDate;
             }
-            else if (startDate is DateTime startDateDt)
+            else if (dateParameter is DateTime dateTime)
             {
-                parsedStartDate = startDateDt;
+                return dateTime;
             }
-            else if (startDate.GetType().Name == "JsonElement")
+            else if (dateParameter.GetType().Name == "JsonElement")
             {
-                // Handle JsonElement from JSON deserialization
-                var jsonElement = (System.Text.Json.JsonElement)startDate;
+                var jsonElement = (System.Text.Json.JsonElement)dateParameter;
                 if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.String)
                 {
-                    var dateStr = jsonElement.GetString();
-                    if (DateTime.TryParse(dateStr, out var parsedStartFromJson))
+                    var jsonDateStr = jsonElement.GetString();
+                    if (DateTime.TryParse(jsonDateStr, out var parsedDateFromJson))
                     {
-                        parsedStartDate = parsedStartFromJson;
-                    }
-                    else
-                    {
-                        throw new ArgumentException("startDate must be a valid date string or DateTime");
+                        return parsedDateFromJson;
                     }
                 }
-                else
-                {
-                    throw new ArgumentException("startDate must be a valid date string or DateTime");
-                }
             }
-            else
-            {
-                throw new ArgumentException("startDate must be a valid date string or DateTime");
-            }
-            
-            if (endDate is string endDateStr && DateTime.TryParse(endDateStr, out var parsedEnd))
-            {
-                parsedEndDate = parsedEnd;
-            }
-            else if (endDate is DateTime endDateDt)
-            {
-                parsedEndDate = endDateDt;
-            }
-            else if (endDate.GetType().Name == "JsonElement")
-            {
-                // Handle JsonElement from JSON deserialization
-                var jsonElement = (System.Text.Json.JsonElement)endDate;
-                if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.String)
-                {
-                    var dateStr = jsonElement.GetString();
-                    if (DateTime.TryParse(dateStr, out var parsedEndFromJson))
-                    {
-                        parsedEndDate = parsedEndFromJson;
-                    }
-                    else
-                    {
-                        throw new ArgumentException("endDate must be a valid date string or DateTime");
-                    }
-                }
-                else
-                {
-                    throw new ArgumentException("endDate must be a valid date string or DateTime");
-                }
-            }
-            else
-            {
-                throw new ArgumentException("endDate must be a valid date string or DateTime");
-            }
-            
-            return await _transactionService.FindTransactionsInDateRangeAsync(_connectionString, parsedStartDate, parsedEndDate, minAmount, maxAmount, description, transactionType);
+
+            return null;
         }
 
-        [Description("Identifies unusual or outlier transactions based on statistical analysis. Useful for fraud detection and identifying data entry errors.")]
-        public async Task<List<TransactionResult>> FindUnusualTransactions(
-            string? categoryCode = null,
-            double standardDeviations = 2.0,
-            int minimumTransactions = 10)
-        {
-            return await _transactionService.FindUnusualTransactionsAsync(_connectionString, categoryCode, standardDeviations, minimumTransactions);
-        }
+
 
 
 
         public async Task<List<CategoryExpenseResult>> GetTopExpenseCategoriesFlexible(object? startDate, object? endDate, int? year, string? customerName = null, int topN = 5)
         {
             // Convert string dates to DateTime? if needed
-            DateTime? parsedStartDate = null;
-            DateTime? parsedEndDate = null;
-            
-            if (startDate != null)
-            {
-                if (startDate is string startDateStr && DateTime.TryParse(startDateStr, out var parsedStart))
-                {
-                    parsedStartDate = parsedStart;
-                }
-                else if (startDate is DateTime startDateDt)
-                {
-                    parsedStartDate = startDateDt;
-                }
-                else if (startDate.GetType().Name == "JsonElement")
-                {
-                    // Handle JsonElement from JSON deserialization
-                    var jsonElement = (System.Text.Json.JsonElement)startDate;
-                    if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.String)
-                    {
-                        var dateStr = jsonElement.GetString();
-                        if (DateTime.TryParse(dateStr, out var parsedStartFromJson))
-                        {
-                            parsedStartDate = parsedStartFromJson;
-                        }
-                    }
-                }
-            }
-            
-            if (endDate != null)
-            {
-                if (endDate is string endDateStr && DateTime.TryParse(endDateStr, out var parsedEnd))
-                {
-                    parsedEndDate = parsedEnd;
-                }
-                else if (endDate is DateTime endDateDt)
-                {
-                    parsedEndDate = endDateDt;
-                }
-                else if (endDate.GetType().Name == "JsonElement")
-                {
-                    // Handle JsonElement from JSON deserialization
-                    var jsonElement = (System.Text.Json.JsonElement)endDate;
-                    if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.String)
-                    {
-                        var dateStr = jsonElement.GetString();
-                        if (DateTime.TryParse(dateStr, out var parsedEndFromJson))
-                        {
-                            parsedEndDate = parsedEndFromJson;
-                        }
-                    }
-                }
-            }
+            DateTime? parsedStartDate = ParseDateParameter(startDate);
+            DateTime? parsedEndDate = ParseDateParameter(endDate);
             
             return await _transactionService.GetTopExpenseCategoriesFlexibleAsync(_connectionString, parsedStartDate, parsedEndDate, year, customerName, topN);
         }
@@ -282,58 +80,8 @@ namespace TransactionLabeler.API.Services
             }
             
             // Convert string dates to DateTime? if needed
-            DateTime? parsedStartDate = null;
-            DateTime? parsedEndDate = null;
-            
-            if (startDate != null)
-            {
-                if (startDate is string startDateStr && DateTime.TryParse(startDateStr, out var parsedStart))
-                {
-                    parsedStartDate = parsedStart;
-                }
-                else if (startDate is DateTime startDateDt)
-                {
-                    parsedStartDate = startDateDt;
-                }
-                else if (startDate.GetType().Name == "JsonElement")
-                {
-                    // Handle JsonElement from JSON deserialization
-                    var jsonElement = (System.Text.Json.JsonElement)startDate;
-                    if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.String)
-                    {
-                        var dateStr = jsonElement.GetString();
-                        if (DateTime.TryParse(dateStr, out var parsedStartFromJson))
-                        {
-                            parsedStartDate = parsedStartFromJson;
-                        }
-                    }
-                }
-            }
-            
-            if (endDate != null)
-            {
-                if (endDate is string endDateStr && DateTime.TryParse(endDateStr, out var parsedEnd))
-                {
-                    parsedEndDate = parsedEnd;
-                }
-                else if (endDate is DateTime endDateDt)
-                {
-                    parsedEndDate = endDateDt;
-                }
-                else if (endDate.GetType().Name == "JsonElement")
-                {
-                    // Handle JsonElement from JSON deserialization
-                    var jsonElement = (System.Text.Json.JsonElement)endDate;
-                    if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.String)
-                    {
-                        var dateStr = jsonElement.GetString();
-                        if (DateTime.TryParse(dateStr, out var parsedEndFromJson))
-                        {
-                            parsedEndDate = parsedEndFromJson;
-                        }
-                    }
-                }
-            }
+            DateTime? parsedStartDate = ParseDateParameter(startDate);
+            DateTime? parsedEndDate = ParseDateParameter(endDate);
             
             return await _transactionService.GetTopTransactionsForCategoryQueryAsync(_connectionString, categoryQuery, parsedStartDate, parsedEndDate, year, topN, customerName, topCategories);
         }
@@ -348,6 +96,21 @@ namespace TransactionLabeler.API.Services
             }
             
             return await _transactionService.SearchCategoriesByVectorAsync(_connectionString, categoryQuery, topCategories, customerName);
+        }
+
+        [Description("Calculates total spending for a specific category within a date range. Use for queries like 'How much did we spend on marketing last month?', 'What was our travel expenses in Q1 2024?', 'Total spending on office supplies this year', 'Marketing costs for Nova Creations in January', 'Travel expenses for Company ABC in 2023'. Extracts the category from the user's query and calculates total spending with breakdown by RGS codes. Only includes expense transactions (AfBij = 'Af').")]
+        public async Task<CategorySpendingResult> GetCategorySpending(
+            string categoryQuery,
+            object? startDate = null,
+            object? endDate = null,
+            int? year = null,
+            string? customerName = null)
+        {
+            // Convert string dates to DateTime? if needed
+            DateTime? parsedStartDate = ParseDateParameter(startDate);
+            DateTime? parsedEndDate = ParseDateParameter(endDate);
+            
+            return await _transactionService.GetCategorySpendingAsync(_connectionString, categoryQuery, parsedStartDate, parsedEndDate, year, customerName);
         }
     }
 }
