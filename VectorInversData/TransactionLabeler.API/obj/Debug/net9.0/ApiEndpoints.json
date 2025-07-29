@@ -1,6 +1,16 @@
 [
   {
     "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
+    "Method": "HealthCheck",
+    "RelativePath": "api/Transactions/health",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
     "Method": "IntelligentQueryWithTools",
     "RelativePath": "api/Transactions/intelligent-query-with-tools",
     "HttpMethod": "POST",
@@ -33,6 +43,38 @@
   },
   {
     "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
+    "Method": "SearchCategories",
+    "RelativePath": "api/Transactions/search-categories",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "request",
+        "Type": "TransactionLabeler.API.Controllers.CategorySearchRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
+    "Method": "GetTransactionsForCategory",
+    "RelativePath": "api/Transactions/transactions-for-category",
+    "HttpMethod": "POST",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "request",
+        "Type": "TransactionLabeler.API.Controllers.CategoryTransactionRequest",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
     "Method": "UpdateAllInversBankTransactionEmbeddings",
     "RelativePath": "api/Transactions/update-all-invers-embeddings",
     "HttpMethod": "POST",
@@ -49,38 +91,6 @@
     "IsController": true,
     "Order": 0,
     "Parameters": [],
-    "ReturnTypes": []
-  },
-  {
-    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
-    "Method": "VectorSearch",
-    "RelativePath": "api/Transactions/vector-search",
-    "HttpMethod": "POST",
-    "IsController": true,
-    "Order": 0,
-    "Parameters": [
-      {
-        "Name": "query",
-        "Type": "System.String",
-        "IsRequired": true
-      }
-    ],
-    "ReturnTypes": []
-  },
-  {
-    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
-    "Method": "VectorSearchSql",
-    "RelativePath": "api/Transactions/vector-search-sql",
-    "HttpMethod": "POST",
-    "IsController": true,
-    "Order": 0,
-    "Parameters": [
-      {
-        "Name": "query",
-        "Type": "System.String",
-        "IsRequired": true
-      }
-    ],
     "ReturnTypes": []
   }
 ]

@@ -25,9 +25,17 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Add DbContext
+// Add DbContext with retry logic for Azure SQL Database
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlServerOptionsAction: sqlOptions =>
+        {
+            sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(30),
+                errorNumbersToAdd: null);
+        }));
 
 // Add services
 builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
@@ -63,15 +71,31 @@ app.UseCors();
 app.UseAuthorization();
 app.MapControllers();
 
-// Ensure database is created and seeded
+// Ensure database is created and seeded with retry logic
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
     var context = services.GetRequiredService<ApplicationDbContext>();
     var embeddingService = services.GetRequiredService<IEmbeddingService>();
     
-    context.Database.EnsureCreated();
-    await SampleDataSeeder.SeedSampleDataAsync(context, embeddingService);
+    try
+    {
+        Console.WriteLine("Attempting to connect to database...");
+        context.Database.EnsureCreated();
+        Console.WriteLine("Database connection successful.");
+        
+        await SampleDataSeeder.SeedSampleDataAsync(context, embeddingService);
+        Console.WriteLine("Sample data seeding completed.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Database connection failed: {ex.Message}");
+        Console.WriteLine("Application will start but database operations may fail.");
+        Console.WriteLine("Please check your Azure SQL Database connection and try again.");
+        
+        // Continue running the app even if database initialization fails
+        // This allows the API to start and provide error messages for database operations
+    }
 }
 
 app.Run();

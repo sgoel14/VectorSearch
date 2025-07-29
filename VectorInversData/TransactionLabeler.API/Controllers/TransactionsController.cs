@@ -25,9 +25,21 @@ namespace TransactionLabeler.API.Controllers
         [HttpPost("update-all-persistent-embeddings")]
         public async Task<IActionResult> UpdateAllPersistentBankStatementEmbeddings()
         {
-            string connectionString = _configuration.GetConnectionString("DefaultConnection");
-            await _transactionService.UpdateAllPersistentBankStatementEmbeddingsAsync(connectionString);
-            return Ok(new { status = "Batch embedding update triggered." });
+            try
+            {
+                string? connectionString = _configuration.GetConnectionString("DefaultConnection");
+                if (string.IsNullOrEmpty(connectionString))
+                {
+                    return BadRequest(new { error = "Database connection string not configured" });
+                }
+                
+                await _transactionService.UpdateAllPersistentBankStatementEmbeddingsAsync(connectionString);
+                return Ok(new { status = "Batch embedding update triggered." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = $"Database operation failed: {ex.Message}" });
+            }
         }
 
         [HttpPost("update-all-invers-embeddings")]
@@ -38,53 +50,7 @@ namespace TransactionLabeler.API.Controllers
             return Ok(new { status = "Batch embedding update for inversbanktransaction triggered." });
         }
 
-        [HttpPost("vector-search")]
-        public async Task<IActionResult> VectorSearch([FromBody] string query)
-        {
-            // 1. Get embedding for the input text
-            var embedding = await _transactionService.GetEmbeddingAsync(query);
 
-            // 2. Use SQL-based vector search with VECTOR_DISTANCE
-            string connectionString = _configuration.GetConnectionString("DefaultConnection");
-            var sqlResults = await _transactionService.VectorSearchInSqlAsync(connectionString, embedding);
-
-            // 3. Convert to the expected format and convert distance to similarity
-            var finalResults = sqlResults.Select(r => new {
-                Id = r.Id,
-                Description = r.Description,
-                Amount = r.Amount,
-                TransactionDate = r.TransactionDate,
-                RgsCode = r.RgsCode,
-                RgsDescription = r.RgsDescription,
-                RgsShortDescription = r.RgsShortDescription,
-                Similarity = 1.0f - Math.Min(r.Similarity, 1.0f) // Convert distance to similarity (1 - distance)
-            });
-
-            return Ok(finalResults);
-        }
-
-        [HttpPost("vector-search-sql")]
-        public async Task<IActionResult> VectorSearchSql([FromBody] string query)
-        {
-            // 1. Get embedding for the input text
-            var embedding = await _transactionService.GetEmbeddingAsync(query);
-
-            // 2. Use SQL-based vector search with VECTOR_DISTANCE
-            string connectionString = _configuration.GetConnectionString("DefaultConnection");
-            var sqlResults = await _transactionService.VectorSearchInSqlAsync(connectionString, embedding);
-
-            // 3. Return raw results with distance values
-            var finalResults = sqlResults.Select(r => new {
-                Id = r.Id,
-                Description = r.Description,
-                Amount = r.Amount,
-                TransactionDate = r.TransactionDate,
-                Distance = r.Similarity, // Raw distance value from VECTOR_DISTANCE
-                Similarity = 1.0f - Math.Min(r.Similarity, 1.0f) // Converted to similarity
-            });
-
-            return Ok(finalResults);
-        }
 
         [HttpPost("intelligent-vector-search")]
         public async Task<IActionResult> IntelligentVectorSearch([FromBody] string query)
@@ -127,5 +93,124 @@ namespace TransactionLabeler.API.Controllers
                 return BadRequest(new { error = ex.Message });
             }
         }
+
+
+
+        [HttpGet("health")]
+        public async Task<IActionResult> HealthCheck()
+        {
+            try
+            {
+                string? connectionString = _configuration.GetConnectionString("DefaultConnection");
+                if (string.IsNullOrEmpty(connectionString))
+                {
+                    return BadRequest(new { 
+                        status = "unhealthy", 
+                        error = "Database connection string not configured",
+                        timestamp = DateTime.UtcNow
+                    });
+                }
+
+                // Test database connection
+                using var conn = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
+                await conn.OpenAsync();
+                
+                return Ok(new { 
+                    status = "healthy", 
+                    database = "connected",
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { 
+                    status = "unhealthy", 
+                    error = $"Database connection failed: {ex.Message}",
+                    timestamp = DateTime.UtcNow
+                });
+            }
+        }
+
+        [HttpPost("search-categories")]
+        public async Task<IActionResult> SearchCategories([FromBody] CategorySearchRequest request)
+        {
+            try
+            {
+                string? connectionString = _configuration.GetConnectionString("DefaultConnection");
+                if (string.IsNullOrEmpty(connectionString))
+                {
+                    return BadRequest(new { error = "Database connection string not configured" });
+                }
+
+                var results = await _transactionService.SearchCategoriesByVectorAsync(connectionString, request.CategoryQuery, request.TopCategories, request.CustomerName);
+                
+                return Ok(new { 
+                    categories = results,
+                    query = request.CategoryQuery,
+                    topCategories = request.TopCategories
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        [HttpPost("transactions-for-category")]
+        public async Task<IActionResult> GetTransactionsForCategory([FromBody] CategoryTransactionRequest request)
+        {
+            try
+            {
+                string? connectionString = _configuration.GetConnectionString("DefaultConnection");
+                if (string.IsNullOrEmpty(connectionString))
+                {
+                    return BadRequest(new { error = "Database connection string not configured" });
+                }
+
+                var results = await _transactionService.GetTopTransactionsForCategoryQueryAsync(
+                    connectionString, 
+                    request.CategoryQuery, 
+                    request.StartDate, 
+                    request.EndDate, 
+                    request.Year, 
+                    request.TopN, 
+                    request.CustomerName, 
+                    request.TopCategories);
+                
+                return Ok(new { 
+                    transactions = results,
+                    categoryQuery = request.CategoryQuery,
+                    topN = request.TopN,
+                    dateRange = new { startDate = request.StartDate, endDate = request.EndDate, year = request.Year },
+                    customerName = request.CustomerName
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
     }
+
+
+
+    public class CategorySearchRequest
+    {
+        public string CategoryQuery { get; set; } = "";
+        public int TopCategories { get; set; } = 5;
+        public string? CustomerName { get; set; }
+    }
+
+    public class CategoryTransactionRequest
+    {
+        public string CategoryQuery { get; set; } = "";
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+        public int? Year { get; set; }
+        public int TopN { get; set; } = 10;
+        public string? CustomerName { get; set; }
+        public int TopCategories { get; set; } = 3;
+    }
+
+
 }  
