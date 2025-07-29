@@ -30,13 +30,11 @@ namespace TransactionLabeler.API.Services
         Task<List<TransactionResult>> GetTopTransactionsForCategoriesAsync(string connectionString, List<string> rgsCodes, DateTime? startDate = null, DateTime? endDate = null, int? year = null, int topN = 10, string? customerName = null);
         Task<List<TransactionResult>> GetTopTransactionsForCategoryQueryAsync(string connectionString, string categoryQuery, DateTime? startDate = null, DateTime? endDate = null, int? year = null, int topN = 10, string? customerName = null, int topCategories = 3);
         
-        Task<List<TransactionResult>> FindDuplicatePaymentsAsync(string connectionString, decimal? amount = null, DateTime? transactionDate = null, string? description = null, string? bankAccountNumber = null, DateTime? startDate = null, DateTime? endDate = null, bool salaryOnly = false);
-        Task<List<TransactionResult>> FindTransactionsInDateRangeAsync(string connectionString, DateTime startDate, DateTime endDate, decimal? minAmount = null, decimal? maxAmount = null, string? description = null, string? transactionType = null);
-        Task<List<TransactionResult>> FindUnusualTransactionsAsync(string connectionString, string? categoryCode = null, double standardDeviations = 2.0, int minimumTransactions = 10);
         Task<string> ProcessIntelligentQueryWithToolsAsync(string connectionString, string query);
 
         Task<List<CategoryExpenseResult>> GetTopExpenseCategoriesForDateRangeAsync(string connectionString, DateTime startDate, DateTime endDate, string? customerName = null, int topN = 5);
         Task<List<CategoryExpenseResult>> GetTopExpenseCategoriesFlexibleAsync(string connectionString, DateTime? startDate, DateTime? endDate, int? year, string? customerName = null, int topN = 5);
+        Task<CategorySpendingResult> GetCategorySpendingAsync(string connectionString, string categoryQuery, DateTime? startDate, DateTime? endDate, int? year, string? customerName = null);
     }
 
     public class TransactionService : ITransactionService
@@ -336,379 +334,9 @@ namespace TransactionLabeler.API.Services
                 .ToListAsync();
         }
 
-        // Get salary-related transaction IDs using vector similarity
-        private async Task<List<Guid>> GetSalaryTransactionIdsAsync(string connectionString, DateTime? startDate = null, DateTime? endDate = null)
-        {
-            // Create a salary-related query embedding
-            string salaryQuery = "salary payroll wage compensation employee payment remuneration";
-            var salaryEmbedding = await _embeddingService.GetEmbeddingAsync(salaryQuery);
-            
-            var whereConditions = new List<string>();
-            var parameters = new List<SqlParameter>();
-
-            if (startDate.HasValue)
-            {
-                whereConditions.Add("t.TransactionDate >= @StartDate");
-                parameters.Add(new SqlParameter("@StartDate", startDate.Value.Date));
-            }
-
-            if (endDate.HasValue)
-            {
-                whereConditions.Add("t.TransactionDate <= @EndDate");
-                parameters.Add(new SqlParameter("@EndDate", endDate.Value.Date.AddDays(1).AddTicks(-1)));
-            }
-
-            string whereClause = whereConditions.Count > 0 ? "WHERE " + string.Join(" AND ", whereConditions) : "";
-
-            string embeddingJson = "[" + string.Join(",", salaryEmbedding.Select(f => f.ToString(CultureInfo.InvariantCulture))) + "]";
-            
-            string sql = $@"
-                SELECT TOP 100 t.Id
-                FROM dbo.inversbanktransaction t
-                LEFT JOIN dbo.rgsmapping r ON t.RgsCode = r.RgsCode
-                {whereClause}
-                WHERE t.CategoryEmbedding IS NOT NULL
-                ORDER BY VECTOR_DISTANCE('cosine', t.CategoryEmbedding, CAST('{embeddingJson}' AS VECTOR({salaryEmbedding.Length}))) ASC";
-
-            var salaryIds = new List<Guid>();
-            using var conn = new SqlConnection(connectionString);
-            using var cmd = new SqlCommand(sql, conn);
-            
-            foreach (var param in parameters)
-            {
-                cmd.Parameters.Add(param);
-            }
-
-            await conn.OpenAsync();
-            using var reader = await cmd.ExecuteReaderAsync();
-            
-            while (await reader.ReadAsync())
-            {
-                salaryIds.Add(reader.GetGuid(0));
-            }
-
-            return salaryIds;
-        }
-
-        public async Task<List<TransactionResult>> FindDuplicatePaymentsAsync(string connectionString, decimal? amount = null, DateTime? transactionDate = null, string? description = null, string? bankAccountNumber = null, DateTime? startDate = null, DateTime? endDate = null, bool salaryOnly = false)
-        {
-            // If salaryOnly is requested, first get salary-related transaction IDs using vector similarity
-            List<Guid>? salaryTransactionIds = null;
-            if (salaryOnly)
-            {
-                salaryTransactionIds = await GetSalaryTransactionIdsAsync(connectionString, startDate, endDate);
-                if (!salaryTransactionIds.Any())
-                {
-                    return new List<TransactionResult>(); // No salary transactions found
-                }
-            }
-
-            var results = new List<TransactionResult>();
-            var whereConditions = new List<string>();
-            var parameters = new List<SqlParameter>();
-
-            if (amount.HasValue)
-            {
-                whereConditions.Add("t.Amount = @Amount");
-                parameters.Add(new SqlParameter("@Amount", amount.Value));
-            }
-
-            if (transactionDate.HasValue)
-            {
-                whereConditions.Add("CAST(t.TransactionDate AS DATE) = CAST(@TransactionDate AS DATE)");
-                parameters.Add(new SqlParameter("@TransactionDate", transactionDate.Value.Date));
-            }
-
-            if (startDate.HasValue)
-            {
-                whereConditions.Add("t.TransactionDate >= @StartDate");
-                parameters.Add(new SqlParameter("@StartDate", startDate.Value.Date));
-            }
-
-            if (endDate.HasValue)
-            {
-                whereConditions.Add("t.TransactionDate <= @EndDate");
-                parameters.Add(new SqlParameter("@EndDate", endDate.Value.Date.AddDays(1).AddTicks(-1)));
-            }
-
-            if (!string.IsNullOrWhiteSpace(description))
-            {
-                whereConditions.Add("t.Description LIKE @Description");
-                parameters.Add(new SqlParameter("@Description", $"%{description}%"));
-            }
-
-            if (!string.IsNullOrWhiteSpace(bankAccountNumber))
-            {
-                whereConditions.Add("(t.BankAccountNumber = @BankAccountNumber OR t.transactionidentifier_accountnumber = @BankAccountNumber)");
-                parameters.Add(new SqlParameter("@BankAccountNumber", bankAccountNumber));
-            }
-
-            // Add salary transaction ID filtering if we have salary-specific IDs
-            if (salaryTransactionIds != null && salaryTransactionIds.Any())
-            {
-                var idList = string.Join(",", salaryTransactionIds.Select(id => $"'{id}'"));
-                whereConditions.Add($"t.Id IN ({idList})");
-            }
-
-            string whereClause = whereConditions.Count > 0 ? "WHERE " + string.Join(" AND ", whereConditions) : "";
-
-            string sql = $@"
-                WITH DuplicateTransactions AS (
-                    SELECT
-                        t.Id,
-                        t.Amount,
-                        t.TransactionDate,
-                        t.Description,
-                        t.BankAccountName,
-                        t.BankAccountNumber,
-                        t.transactionidentifier_accountnumber,
-                        t.RgsCode,
-                        r.RgsDescription,
-                        r.RgsShortDescription,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY t.Amount, 
-                                        COALESCE(r.RgsShortDescription, ''),
-                                        CAST(t.TransactionDate AS DATE)
-                            ORDER BY t.Id
-                        ) AS rn,
-                        COUNT(*) OVER (
-                            PARTITION BY t.Amount, 
-                                        COALESCE(r.RgsShortDescription, ''),
-                                        CAST(t.TransactionDate AS DATE)
-                        ) AS duplicate_count
-                    FROM dbo.inversbanktransaction t
-                    LEFT JOIN dbo.rgsmapping r ON t.RgsCode = r.RgsCode
-                    {whereClause}
-                )
-                SELECT
-                    dt.Id,
-                    dt.Description,
-                    dt.Amount,
-                    dt.TransactionDate,
-                    dt.RgsCode,
-                    dt.RgsDescription,
-                    dt.RgsShortDescription,
-                    dt.BankAccountName,
-                    dt.BankAccountNumber,
-                    dt.transactionidentifier_accountnumber,
-                    1.0 AS Similarity
-                FROM DuplicateTransactions dt
-                WHERE dt.duplicate_count > 1
-                ORDER BY dt.Amount DESC, dt.TransactionDate DESC, dt.rn";
-
-            using var conn = new SqlConnection(connectionString);
-            using var cmd = new SqlCommand(sql, conn);
-            
-            foreach (var param in parameters)
-            {
-                cmd.Parameters.Add(param);
-            }
-
-            await conn.OpenAsync();
-            using var reader = await cmd.ExecuteReaderAsync();
-            
-            while (await reader.ReadAsync())
-            {
-                results.Add(new TransactionResult
-                {
-                    Id = reader.GetGuid("Id"),
-                    Description = reader.IsDBNull("Description") ? null : reader.GetString("Description"),
-                    Amount = reader.IsDBNull("Amount") ? null : reader.GetDecimal("Amount"),
-                    TransactionDate = reader.IsDBNull("TransactionDate") ? null : reader.GetDateTime("TransactionDate"),
-                    RgsCode = reader.IsDBNull("RgsCode") ? null : reader.GetString("RgsCode"),
-                    RgsDescription = reader.IsDBNull("RgsDescription") ? null : reader.GetString("RgsDescription"),
-                    RgsShortDescription = reader.IsDBNull("RgsShortDescription") ? null : reader.GetString("RgsShortDescription"),
-                    BankAccountName = reader.IsDBNull("BankAccountName") ? null : reader.GetString("BankAccountName"),
-                    BankAccountNumber = reader.IsDBNull("BankAccountNumber") ? null : reader.GetString("BankAccountNumber"),
-                    TransactionIdentifierAccountNumber = reader.IsDBNull("transactionidentifier_accountnumber") ? null : reader.GetString("transactionidentifier_accountnumber"),
-                    Similarity = (float)reader.GetDouble("Similarity")
-                });
-            }
-
-            return results;
-        }
 
 
 
-        public async Task<List<TransactionResult>> FindTransactionsInDateRangeAsync(string connectionString, DateTime startDate, DateTime endDate, decimal? minAmount = null, decimal? maxAmount = null, string? description = null, string? transactionType = null)
-        {
-            var results = new List<TransactionResult>();
-            var whereConditions = new List<string>
-            {
-                "t.TransactionDate >= @StartDate",
-                "t.TransactionDate <= @EndDate"
-            };
-            
-            var parameters = new List<SqlParameter>
-            {
-                new SqlParameter("@StartDate", startDate.Date),
-                new SqlParameter("@EndDate", endDate.Date.AddDays(1).AddTicks(-1))
-            };
-
-            if (minAmount.HasValue)
-            {
-                whereConditions.Add("t.Amount >= @MinAmount");
-                parameters.Add(new SqlParameter("@MinAmount", minAmount.Value));
-            }
-
-            if (maxAmount.HasValue)
-            {
-                whereConditions.Add("t.Amount <= @MaxAmount");
-                parameters.Add(new SqlParameter("@MaxAmount", maxAmount.Value));
-            }
-
-            if (!string.IsNullOrWhiteSpace(description))
-            {
-                whereConditions.Add("t.Description LIKE @Description");
-                parameters.Add(new SqlParameter("@Description", $"%{description}%"));
-            }
-
-            if (!string.IsNullOrWhiteSpace(transactionType))
-            {
-                whereConditions.Add("t.TransactionType = @TransactionType");
-                parameters.Add(new SqlParameter("@TransactionType", transactionType));
-            }
-
-            string whereClause = string.Join(" AND ", whereConditions);
-
-            string sql = $@"
-                SELECT TOP 50
-                    t.Id,
-                    t.Description,
-                    t.Amount,
-                    t.TransactionDate,
-                    t.RgsCode,
-                    r.RgsDescription,
-                    r.RgsShortDescription,
-                    t.BankAccountName,
-                    t.BankAccountNumber,
-                    t.transactionidentifier_accountnumber,
-                    1.0 AS Similarity
-                FROM dbo.inversbanktransaction t
-                LEFT JOIN dbo.rgsmapping r ON t.RgsCode = r.RgsCode
-                WHERE {whereClause}
-                ORDER BY t.TransactionDate DESC, t.Amount DESC";
-
-            using var conn = new SqlConnection(connectionString);
-            using var cmd = new SqlCommand(sql, conn);
-            
-            foreach (var param in parameters)
-            {
-                cmd.Parameters.Add(param);
-            }
-
-            await conn.OpenAsync();
-            using var reader = await cmd.ExecuteReaderAsync();
-            
-            while (await reader.ReadAsync())
-            {
-                results.Add(new TransactionResult
-                {
-                    Id = reader.GetGuid("Id"),
-                    Description = reader.IsDBNull("Description") ? null : reader.GetString("Description"),
-                    Amount = reader.IsDBNull("Amount") ? null : reader.GetDecimal("Amount"),
-                    TransactionDate = reader.IsDBNull("TransactionDate") ? null : reader.GetDateTime("TransactionDate"),
-                    RgsCode = reader.IsDBNull("RgsCode") ? null : reader.GetString("RgsCode"),
-                    RgsDescription = reader.IsDBNull("RgsDescription") ? null : reader.GetString("RgsDescription"),
-                    RgsShortDescription = reader.IsDBNull("RgsShortDescription") ? null : reader.GetString("RgsShortDescription"),
-                    BankAccountName = reader.IsDBNull("BankAccountName") ? null : reader.GetString("BankAccountName"),
-                    BankAccountNumber = reader.IsDBNull("BankAccountNumber") ? null : reader.GetString("BankAccountNumber"),
-                    TransactionIdentifierAccountNumber = reader.IsDBNull("transactionidentifier_accountnumber") ? null : reader.GetString("transactionidentifier_accountnumber"),
-                    Similarity = (float)reader.GetDouble("Similarity")
-                });
-            }
-
-            return results;
-        }
-
-        public async Task<List<TransactionResult>> FindUnusualTransactionsAsync(string connectionString, string? categoryCode = null, double standardDeviations = 2.0, int minimumTransactions = 10)
-        {
-            var results = new List<TransactionResult>();
-            var whereConditions = new List<string>();
-            var parameters = new List<SqlParameter>
-            {
-                new SqlParameter("@StandardDeviations", standardDeviations),
-                new SqlParameter("@MinimumTransactions", minimumTransactions)
-            };
-
-            if (!string.IsNullOrWhiteSpace(categoryCode))
-            {
-                whereConditions.Add("t.RgsCode = @CategoryCode");
-                parameters.Add(new SqlParameter("@CategoryCode", categoryCode));
-            }
-
-            string whereClause = whereConditions.Count > 0 ? "WHERE " + string.Join(" AND ", whereConditions) : "";
-
-            string sql = $@"
-                WITH TransactionStats AS (
-                    SELECT 
-                        AVG(CAST(t.Amount AS FLOAT)) AS mean_amount,
-                        STDEV(CAST(t.Amount AS FLOAT)) AS stdev_amount,
-                        COUNT(*) AS transaction_count
-                    FROM dbo.inversbanktransaction t
-                    {whereClause}
-                    AND t.Amount IS NOT NULL
-                ),
-                OutlierTransactions AS (
-                    SELECT 
-                        t.Id,
-                        t.Description,
-                        t.Amount,
-                        t.TransactionDate,
-                        t.RgsCode,
-                        r.RgsDescription,
-                        r.RgsShortDescription,
-                        t.BankAccountName,
-                        t.BankAccountNumber,
-                        t.transactionidentifier_accountnumber,
-                        ABS(CAST(t.Amount AS FLOAT) - ts.mean_amount) / NULLIF(ts.stdev_amount, 0) AS z_score,
-                        1.0 AS Similarity
-                    FROM dbo.inversbanktransaction t
-                    LEFT JOIN dbo.rgsmapping r ON t.RgsCode = r.RgsCode
-                    CROSS JOIN TransactionStats ts
-                    {whereClause}
-                    AND t.Amount IS NOT NULL
-                    AND ts.transaction_count >= @MinimumTransactions
-                    AND ts.stdev_amount > 0
-                )
-                SELECT TOP 20
-                    Id, Description, Amount, TransactionDate, RgsCode, RgsDescription, RgsShortDescription,
-                    BankAccountName, BankAccountNumber, transactionidentifier_accountnumber, Similarity
-                FROM OutlierTransactions
-                WHERE z_score > @StandardDeviations
-                ORDER BY z_score DESC";
-
-            using var conn = new SqlConnection(connectionString);
-            using var cmd = new SqlCommand(sql, conn);
-            
-            foreach (var param in parameters)
-            {
-                cmd.Parameters.Add(param);
-            }
-
-            await conn.OpenAsync();
-            using var reader = await cmd.ExecuteReaderAsync();
-            
-            while (await reader.ReadAsync())
-            {
-                results.Add(new TransactionResult
-                {
-                    Id = reader.GetGuid("Id"),
-                    Description = reader.IsDBNull("Description") ? null : reader.GetString("Description"),
-                    Amount = reader.IsDBNull("Amount") ? null : reader.GetDecimal("Amount"),
-                    TransactionDate = reader.IsDBNull("TransactionDate") ? null : reader.GetDateTime("TransactionDate"),
-                    RgsCode = reader.IsDBNull("RgsCode") ? null : reader.GetString("RgsCode"),
-                    RgsDescription = reader.IsDBNull("RgsDescription") ? null : reader.GetString("RgsDescription"),
-                    RgsShortDescription = reader.IsDBNull("RgsShortDescription") ? null : reader.GetString("RgsShortDescription"),
-                    BankAccountName = reader.IsDBNull("BankAccountName") ? null : reader.GetString("BankAccountName"),
-                    BankAccountNumber = reader.IsDBNull("BankAccountNumber") ? null : reader.GetString("BankAccountNumber"),
-                    TransactionIdentifierAccountNumber = reader.IsDBNull("transactionidentifier_accountnumber") ? null : reader.GetString("transactionidentifier_accountnumber"),
-                    Similarity = (float)reader.GetDouble("Similarity")
-                });
-            }
-
-            return results;
-        }
 
         public async Task<string> ProcessIntelligentQueryWithToolsAsync(string connectionString, string query)
         {
@@ -725,37 +353,24 @@ namespace TransactionLabeler.API.Services
                     Tools =
                     [
                         AIFunctionFactory.Create(
-                            (decimal? amount, object? transactionDate, string? description, string? bankAccountNumber, object? startDate, object? endDate, bool salaryOnly) =>
-                                financialTools.FindDuplicatePayments(amount, transactionDate, description, bankAccountNumber, startDate, endDate, salaryOnly),
-                            "FindDuplicatePayments",
-                            "Finds potential duplicate bank transactions. Can be used for specific amount/date duplicates or salary-specific duplicates within date ranges. For salary duplicates, use salaryOnly=true with startDate/endDate. For specific duplicates, use amount and transactionDate. Useful for detecting double payments, duplicate invoices, or erroneous transactions. Use this for queries like 'Find double salary payments in January' or 'Check for duplicate payments of $1000 on March 15th'."
-                        ),
-                        AIFunctionFactory.Create(
-                            (object startDate, object endDate, decimal? minAmount, decimal? maxAmount, string? description, string? transactionType) =>
-                                financialTools.FindTransactionsInDateRange(startDate, endDate, minAmount, maxAmount, description, transactionType),
-                            "FindTransactionsInDateRange",
-                            "Finds transactions within a specific date range with optional filtering by amount, description, or transaction type. Useful for period analysis and spending pattern identification."
-                        ),
-                        AIFunctionFactory.Create(
-                            (string? categoryCode, double standardDeviations, int minimumTransactions) =>
-                                financialTools.FindUnusualTransactions(categoryCode, standardDeviations, minimumTransactions),
-                            "FindUnusualTransactions",
-                            "Identifies unusual or outlier transactions based on statistical analysis. Useful for fraud detection and identifying data entry errors."
-                        ),
-                        AIFunctionFactory.Create(
                             (object? startDate, object? endDate, int? year, string? customerName, int topN) => financialTools.GetTopExpenseCategoriesFlexible(startDate, endDate, year, customerName, topN),
                             "GetTopExpenseCategories",
-                            "Returns the top N expense categories for a given date range, month, quarter, or year, optionally filtered by customer name, grouped by RgsDescription. Only expense transactions (AfBij = 'Af') are included. Use this tool for queries like 'What are my top 3 expenses for January 2024?', 'Show my biggest spending categories in Q2 2023', 'Top 5 expense categories in 2023', 'Top 4 categories for first half of 2024', 'Top expenses for Company ABC', 'Top 3 categories for customer XYZ in 2024'. If the user does not specify a date range or year, use the current year. If the user does not specify a number, use 5. If the user mentions a specific company or customer, extract the customer name. The result is suitable for further aggregation or summarization by an LLM if needed."
+                            "Returns the top N expense categories for a given date range, month, quarter, or year, optionally filtered by customer name. Use for queries like 'What are my top 3 expenses for January 2024?', 'Show my biggest spending categories in Q2 2023', 'Top 5 expense categories in 2023', 'Top expenses for Company ABC'. Only expense transactions (AfBij = 'Af') are included. If the user does not specify a date range or year, use the current year. If the user does not specify a number, use 5."
                         ),
                         AIFunctionFactory.Create(
                             (string categoryQuery, object? startDate, object? endDate, int? year, int topN, string? customerName, int topCategories) => financialTools.GetTopTransactionsForCategory(categoryQuery, startDate, endDate, year, topN, customerName, topCategories),
                             "GetTopTransactionsForCategory",
-                            "Finds top transactions for ANY specific category using vector search. First searches for relevant categories using semantic similarity, then returns the top transactions for those categories. Use for queries like 'Top 10 transactions for marketing costs', 'Show me office expenditure expenses', 'Top 5 transactions for tax related costs', 'Show me travel expenses', 'Show me restaurant expenses', 'Show me utility expenses', 'Show me advertising costs', 'Show me legal expenses', 'Show me insurance costs', etc. Extract the category type from the user's query. If no number specified, use 10. Only include year parameter if explicitly mentioned in the query."
+                            "Finds top transactions for ANY specific category using vector search. Use for queries like 'Top 10 transactions for marketing costs', 'Show me travel expenses', 'Show me car repair transactions', 'Find transactions for staff drink and food', 'Show me marketing transactions', 'List transactions for travel', 'Get transactions for office supplies', 'Search 10 transactions for car repair', 'Find 5 transactions for marketing', 'Get transactions for category [any category]'. ANY query asking for transaction details, transaction lists, or transaction data should use this tool. Extract the category type from the user's query. If no number specified, use 10. Only include year parameter if explicitly mentioned in the query."
                         ),
                         AIFunctionFactory.Create(
                             (string categoryQuery, int topCategories, string? customerName) => financialTools.SearchCategories(categoryQuery, topCategories, customerName),
                             "SearchCategories",
-                            "Searches for relevant categories using vector similarity. Returns categories that match the semantic meaning of the query. Use this tool when the user wants to understand what categories are available or to debug category searches. Can be filtered by customer name. Examples: 'travel categories', 'food categories', 'office expense categories', 'travel categories for Company ABC'."
+                            "Searches for relevant categories using vector similarity. Returns categories that match the semantic meaning of the query. Use for queries like 'What categories are available?', 'Show me all categories', 'List all categories', 'Explore categories', 'Show me categories for Nova Creations', 'What categories exist?', 'Show me available categories'. For 'all categories' requests, set categoryQuery to empty string. Use this tool ONLY when the user wants to understand what categories are available, NOT when they want transaction data. If the user asks for transactions, transaction details, or transaction lists, use GetTopTransactionsForCategory instead."
+                        ),
+                        AIFunctionFactory.Create(
+                            (string categoryQuery, object? startDate, object? endDate, int? year, string? customerName) => financialTools.GetCategorySpending(categoryQuery, startDate, endDate, year, customerName),
+                            "GetCategorySpending",
+                            "Calculates total spending for a specific category within a date range. Use for queries like 'How much did we spend on marketing last month?', 'What was our travel expenses in Q1 2024?', 'Total spending on office supplies this year', 'Marketing costs for Nova Creations in January', 'Travel expenses for Company ABC in 2023', 'Total spending on utilities like gas, electricity etc', 'Spending on housing, electricity, gas etc'. Extract the FULL category description from the user's query (e.g., 'utilities like gas, electricity etc' not just 'utilities') and calculates total spending with breakdown by RGS codes. Only includes expense transactions (AfBij = 'Af')."
                         )
                     ]
                 };
@@ -766,51 +381,14 @@ namespace TransactionLabeler.API.Services
                     new(ChatRole.System, @"
                         You are a financial analysis assistant. You can help users analyze transaction data using the available tools.
                         
-                        SEMANTIC UNDERSTANDING RULES:
-                        - Understand that ANY query asking for transactions, transaction lists, or transaction details should use GetTopTransactionsForCategory
-                        - If the user mentions a category (like 'staff drink and food', 'car repair', 'marketing', etc.) and wants transactions, use GetTopTransactionsForCategory
-                        - If the user asks for 'top N transactions', 'list of transactions', 'show me transactions', 'transactions for [category]', use GetTopTransactionsForCategory
-                        - If the user asks for expense categories or spending summaries, use GetTopExpenseCategories
-                        - If the user wants to explore available categories, use SearchCategories
-                        
-                        TOOL SELECTION RULES:
-                        1. Use GetTopExpenseCategories for queries about 'top expenses', 'biggest spending categories', 'top N expense categories', 'expense categories for year/month/quarter', 'spending summary'
-                        2. Use GetTopTransactionsForCategory for ANY query that semantically relates to getting transaction details, including:
-                           - 'show me top 10 transactions with category staff drink and food'
-                           - 'can you show me top 10 transactions for category staff drink and food'
-                           - 'transactions for staff drink and food'
-                           - 'show me staff drink and food transactions'
-                           - 'list transactions for [category]'
-                           - 'top N transactions for [any category]'
-                           - 'transactions for [any category]'
-                           - 'show me [category] transactions'
-                           - 'get transactions for [category]'
-                           - 'find transactions for [category]'
-                           - 'display transactions for [category]'
-                           - 'retrieve transactions for [category]'
-                        3. Use SearchCategories for queries about 'what categories are available', 'list all categories', 'show me categories', 'explore categories'
-                        
                         PARAMETER EXTRACTION:
                         - Extract customer names: 'for customer X', 'customer X', 'for X', 'Nova Creations', etc.
                         - Extract numbers for topN: 'top 5', 'top 10', '5 transactions', '10 transactions', 'top 10 transactions'
-                        - Extract dates: '2024', '2025', 'Q1 2024', 'January 2024', 'first half of 2024', 'year 2025'
-                        - Extract categories: 'staff drink and food', 'car repair', 'marketing', 'travel', 'office expenses', etc.
+                        - Extract dates: '2024', '2025', 'Q1 2024', 'January 2024', 'first half of 2024', 'year 2025', 'last 3 months', 'last 6 months', 'last 12 months', 'last 30 days', 'last 60 days', 'last 90 days', 'last 120 days', 'last 180 days', 'last 365 days'
+                        - Extract categories: 'staff drink and food', 'car repair', 'marketing', 'travel', 'office expenses', 'utilities like gas electricity', 'housing electricity gas', etc.
                         - For category extraction, be flexible: 'category staff drink and food' → 'staff drink and food', 'transactions for marketing' → 'marketing'
-                        
-                        EXAMPLES:
-                        - 'can you show me top 10 transactions with category staff drink and food for customer Nova Creations for year 2025' → GetTopTransactionsForCategory(categoryQuery='staff drink and food', topN=10, customerName='Nova Creations', year=2025, topCategories=3)
-                        - 'can you show me top 10 transactions for category staff drink and food for customer Nova Creations for year 2025' → GetTopTransactionsForCategory(categoryQuery='staff drink and food', topN=10, customerName='Nova Creations', year=2025, topCategories=3)
-                        - 'can you show transactions for category staff drink and food' → GetTopTransactionsForCategory(categoryQuery='staff drink and food', topN=10, topCategories=3)
-                        - 'can you show me staff drink and food transactions for year 2025' → GetTopTransactionsForCategory(categoryQuery='staff drink and food', topN=10, year=2025, topCategories=3)
-                        - 'can you show me staff drink and food transactions for year 2025 for Nova Creations' → GetTopTransactionsForCategory(categoryQuery='staff drink and food', topN=10, customerName='Nova Creations', year=2025, topCategories=3)
-                        - 'list transactions for marketing' → GetTopTransactionsForCategory(categoryQuery='marketing', topN=10, topCategories=3)
-                        - 'get transactions for travel expenses' → GetTopTransactionsForCategory(categoryQuery='travel expenses', topN=10, topCategories=3)
-                        - 'find transactions for office supplies' → GetTopTransactionsForCategory(categoryQuery='office supplies', topN=10, topCategories=3)
-                        - 'Top 5 transactions for car repair costs for customer Nova Creations' → GetTopTransactionsForCategory(categoryQuery='car repair', topN=5, customerName='Nova Creations', topCategories=3)
-                        - 'Show me marketing expenses' → GetTopTransactionsForCategory(categoryQuery='marketing', topN=10, topCategories=3)
-                        - 'Top expenses for 2024' → GetTopExpenseCategories(year=2024, topN=5)
-                        - 'What categories are available?' → SearchCategories(categoryQuery='', topCategories=50)
-                        - 'Search all categories for Nova Creations' → SearchCategories(categoryQuery='all', topCategories=50, customerName='Nova Creations')
+                        - For spending queries, extract the FULL category description: 'utilities like gas, electricity etc' → 'utilities like gas, electricity etc', 'housing, electricity, gas etc' → 'housing, electricity, gas etc'
+                        - Extract spending queries: 'how much did we spend on', 'total spending on', 'what was our spending on', 'costs for', 'expenses for'
                         
                         PARAMETER RULES:
                         - Always include topCategories=3 for GetTopTransactionsForCategory calls
@@ -819,11 +397,16 @@ namespace TransactionLabeler.API.Services
                         - Only include year parameter if explicitly mentioned in the query (e.g., 'in 2024', 'for 2023', 'this year', 'year 2025')
                         - Do NOT automatically add year filters unless the user specifically asks for a particular year
                         - For category queries, extract the category name from phrases like 'category staff drink and food' → 'staff drink and food'
+                        - CRITICAL: For ""all categories"" requests (e.g., ""show all categories"", ""list all categories"", ""what categories are available""), set categoryQuery to empty string or null, NOT to the customer name
+                        - CRITICAL: When user asks ""show all categories for X"", set categoryQuery="" and customerName=""X""
+                        - CRITICAL: When user asks ""what categories does X have"", set categoryQuery="" and customerName=""X""
+                        - CRITICAL: When user asks ""show me all categories for X"", set categoryQuery="" and customerName=""X""
                         
                         RESPONSE FORMAT:
                         - For SearchCategories results: Show the actual RGS codes and descriptions in a clear list format. Do not apologize or say there was an issue.
-                        - For GetTopExpenseCategories results: Show the actual category names and amounts
+                        - For GetTopExpenseCategories results: Show the actual category names, RGS codes, and amounts exactly as returned by the function. Do not summarize or generalize.
                         - For GetTopTransactionsForCategory results: Show the actual transaction details including description, amount, date, and RGS code
+                        - For GetCategorySpending results: Show the total spending amount, transaction count, date range, customer (if specified), and breakdown by RGS codes with amounts and transaction counts
                         - For other results: Provide a clear summary of the results
                         - If no results found, explain that no transactions match the criteria
                         
@@ -837,11 +420,16 @@ namespace TransactionLabeler.API.Services
                         - NEVER say ""no transactions found"" if the function returned actual transaction data
                         - ALWAYS show the actual transaction details when they are provided by the function
                         - If the function returns an array of transactions, display each transaction with full details
-                        - Understand semantic intent: if someone asks for transactions (in any form), use GetTopTransactionsForCategory
-                        - Be intelligent about natural language: recognize that 'list transactions', 'get transactions', 'find transactions', 'show transactions' all mean the same thing
                         - IMPORTANT: When you receive category data from SearchCategories, display the actual categories that were returned. Do not say ""no transactions found"" when categories were successfully returned.
                         - IMPORTANT: When you receive transaction data from GetTopTransactionsForCategory, display the actual transactions that were returned. Do not say ""no transactions found"" when transactions were successfully returned.
                         - IMPORTANT: When you receive expense data from GetTopExpenseCategories, display the actual expense categories that were returned. Do not say ""no transactions found"" when expense data was successfully returned.
+                        - TOOL SELECTION: Use SearchCategories ONLY when the user wants to explore available categories. Use GetTopTransactionsForCategory when the user asks for transaction data, transaction details, or transaction lists.
+                        - EMPTY RESULTS: When a function returns no results (empty array), provide a clear explanation that no data matches the criteria. Do NOT try another function - just explain the empty result.
+                        - DATA DISPLAY: ALWAYS show the exact data returned by the function. Do NOT provide generic summaries or simplified descriptions. Show RGS codes, descriptions, and amounts exactly as they appear in the function result.
+                        - FORMATTED DATA: When you receive formatted data from the function, use that exact formatting. Do NOT create your own summaries or reformat the data. The formatted data already contains the proper structure with RGS codes, descriptions, and amounts.
+                        - EXACT DISPLAY: Copy the formatted data exactly as provided. Do NOT summarize, generalize, or create your own version. The function result already has the correct format.
+                        - ALL CATEGORIES RULE: When user asks for ""all categories"" or ""show all categories"", set categoryQuery to empty string (""""), NOT to the customer name. The customer name should be set separately in customerName parameter.
+                        - SPENDING QUERIES RULE: For spending queries like ""how much did we spend on X"", ""total spending on X"", ""what was our spending on X"", ""costs for X"", ""expenses for X"", use GetCategorySpending tool. Extract the FULL category description from the query and use it as categoryQuery parameter. For example: ""utilities like gas, electricity etc"" → categoryQuery=""utilities like gas, electricity etc"", ""housing, electricity, gas etc"" → categoryQuery=""housing, electricity, gas etc"".
                         "),
                     new(ChatRole.User, query)
                 };
@@ -978,6 +566,7 @@ namespace TransactionLabeler.API.Services
 
                             // Add the tool result to the chat history as an assistant message with clear formatting
                             string formattedResult = FormatToolResult(functionName, toolResult);
+                            Console.WriteLine($"Formatted result for {functionName}: {formattedResult}");
                             chatHistory.Add(new ChatMessage(ChatRole.Assistant, formattedResult));
                             
                             // Check if we have results - if so, prompt for final response immediately
@@ -1006,6 +595,22 @@ namespace TransactionLabeler.API.Services
                                     hasResults = true;
                                     Console.WriteLine($"Detected {jsonElement.GetArrayLength()} results in JsonElement array");
                                 }
+                                else if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+                                {
+                                    // Check for spending data (has totalSpending and breakdown)
+                                    bool hasTotalSpending = jsonElement.TryGetProperty("totalSpending", out _);
+                                    bool hasBreakdown = jsonElement.TryGetProperty("breakdown", out _);
+                                    
+                                    if (hasTotalSpending && hasBreakdown)
+                                    {
+                                        var totalSpending = jsonElement.TryGetProperty("totalSpending", out var spendingProp) ? spendingProp.GetDecimal() : 0;
+                                        if (totalSpending > 0)
+                                        {
+                                            hasResults = true;
+                                            Console.WriteLine($"Detected spending data with total: {totalSpending:C}");
+                                        }
+                                    }
+                                }
                             }
                             
                             Console.WriteLine($"hasResults = {hasResults}");
@@ -1023,7 +628,11 @@ namespace TransactionLabeler.API.Services
                                 }
                                 else if (functionName == "GetTopExpenseCategories")
                                 {
-                                    chatHistory.Add(new ChatMessage(ChatRole.User, "You have the expense category data. Provide a final response showing the actual category names and amounts that were returned. Do not make any more function calls - just show the expense data."));
+                                    chatHistory.Add(new ChatMessage(ChatRole.User, "You have the expense category data. Use the exact formatted data that was provided to you. Do not create your own summary or reformat the data. Show the RGS codes, descriptions, and amounts exactly as they appear in the formatted result. Do not make any more function calls - just display the formatted data exactly as provided."));
+                                }
+                                else if (functionName == "GetCategorySpending")
+                                {
+                                    chatHistory.Add(new ChatMessage(ChatRole.User, "You have the spending analysis data. Provide a final response showing the total spending amount, transaction count, date range, customer (if specified), and breakdown by RGS codes with amounts and transaction counts. Do not make any more function calls - just show the spending data."));
                                 }
                                 else
                                 {
@@ -1032,8 +641,23 @@ namespace TransactionLabeler.API.Services
                             }
                             else
                             {
-                                // No results found, allow another attempt
-                                chatHistory.Add(new ChatMessage(ChatRole.User, "No results found. Please try a different approach or provide a helpful response explaining that no data matches the criteria."));
+                                // No results found - provide specific guidance based on the function
+                                if (functionName == "GetTopTransactionsForCategory")
+                                {
+                                    chatHistory.Add(new ChatMessage(ChatRole.User, "No transactions found for the specified criteria. Provide a helpful response explaining that no transactions match the search criteria. Do not make any more function calls - just explain that no transactions were found."));
+                                }
+                                else if (functionName == "SearchCategories")
+                                {
+                                    chatHistory.Add(new ChatMessage(ChatRole.User, "No categories found for the specified criteria. Provide a helpful response explaining that no categories match the search criteria. Do not make any more function calls - just explain that no categories were found."));
+                                }
+                                else if (functionName == "GetTopExpenseCategories")
+                                {
+                                    chatHistory.Add(new ChatMessage(ChatRole.User, "No expense categories found for the specified criteria. Provide a helpful response explaining that no expense categories match the search criteria. Do not make any more function calls - just explain that no expense categories were found."));
+                                }
+                                else
+                                {
+                                    chatHistory.Add(new ChatMessage(ChatRole.User, "No results found. Please provide a helpful response explaining that no data matches the criteria. Do not make any more function calls."));
+                                }
                             }
                             
                             // Continue the loop to let the LLM process the tool result
@@ -1105,6 +729,41 @@ namespace TransactionLabeler.API.Services
                 }
                 return formatted;
             }
+            else if (toolResult is CategorySpendingResult spendingResult)
+            {
+                var formatted = $"Function {functionName} returned spending analysis for '{spendingResult.CategoryQuery}':\n\n";
+                formatted += $"Total Spending: {spendingResult.TotalSpending:C}\n";
+                formatted += $"Transaction Count: {spendingResult.TransactionCount}\n";
+                if (spendingResult.StartDate.HasValue && spendingResult.EndDate.HasValue)
+                {
+                    formatted += $"Date Range: {spendingResult.StartDate.Value:yyyy-MM-dd} to {spendingResult.EndDate.Value:yyyy-MM-dd}\n";
+                }
+                if (!string.IsNullOrWhiteSpace(spendingResult.CustomerName))
+                {
+                    formatted += $"Customer: {spendingResult.CustomerName}\n";
+                }
+                formatted += "\nBreakdown by RGS Code:\n";
+                
+                if (spendingResult.Breakdown.Any())
+                {
+                    foreach (var breakdown in spendingResult.Breakdown)
+                    {
+                        formatted += $"• RGS Code: {breakdown.RgsCode}\n";
+                        formatted += $"  Description: {breakdown.RgsDescription}\n";
+                        if (!string.IsNullOrWhiteSpace(breakdown.RgsShortDescription))
+                        {
+                            formatted += $"  Short Description: {breakdown.RgsShortDescription}\n";
+                        }
+                        formatted += $"  Amount: {breakdown.Amount:C}\n";
+                        formatted += $"  Transactions: {breakdown.TransactionCount}\n\n";
+                    }
+                }
+                else
+                {
+                    formatted += "No spending found for the specified criteria.\n";
+                }
+                return formatted;
+            }
             else if (toolResult is List<TransactionResult> transactionResults)
             {
                 if (!transactionResults.Any())
@@ -1150,10 +809,30 @@ namespace TransactionLabeler.API.Services
                     {
                         bool hasRgsDescription = firstItem.TryGetProperty("rgsDescription", out _);
                         bool hasDescription = firstItem.TryGetProperty("description", out _);
+                        bool hasTotalExpense = firstItem.TryGetProperty("totalExpense", out _);
                         
-                        if (hasRgsDescription && !hasDescription)
+                        if (hasRgsDescription && !hasDescription && hasTotalExpense)
                         {
-                            // This is category data
+                            // This is expense category data
+                            var formatted = $"Function {functionName} returned {arrayLength} expense categories:\n\n";
+                            foreach (var item in jsonElement.EnumerateArray())
+                            {
+                                if (item.ValueKind == System.Text.Json.JsonValueKind.Object)
+                                {
+                                    var rgsCode = item.TryGetProperty("rgsCode", out var rgsCodeProp) ? rgsCodeProp.GetString() : "N/A";
+                                    var rgsDescription = item.TryGetProperty("rgsDescription", out var rgsDescProp) ? rgsDescProp.GetString() : "N/A";
+                                    var totalExpense = item.TryGetProperty("totalExpense", out var expenseProp) ? expenseProp.GetDecimal() : 0;
+                                    
+                                    formatted += $"• RGS Code: {rgsCode}\n";
+                                    formatted += $"  Description: {rgsDescription}\n";
+                                    formatted += $"  Total Amount: {totalExpense:C}\n\n";
+                                }
+                            }
+                            return formatted;
+                        }
+                        else if (hasRgsDescription && !hasDescription)
+                        {
+                            // This is category data (SearchCategories)
                             var formatted = $"Function {functionName} returned {arrayLength} categories:\n\n";
                             foreach (var item in jsonElement.EnumerateArray())
                             {
@@ -1204,6 +883,84 @@ namespace TransactionLabeler.API.Services
                     {
                         // Not an object, return generic format
                         return $"Function {functionName} returned {arrayLength} items in an array.";
+                    }
+                }
+                else if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    // Handle object JsonElement (like CategorySpendingResult)
+                    Console.WriteLine($"JsonElement is an object - checking for spending data");
+                    
+                    // Check if this is spending data (has totalSpending and breakdown)
+                    bool hasTotalSpending = jsonElement.TryGetProperty("totalSpending", out _);
+                    bool hasBreakdown = jsonElement.TryGetProperty("breakdown", out _);
+                    bool hasCategoryQuery = jsonElement.TryGetProperty("categoryQuery", out _);
+                    
+                    if (hasTotalSpending && hasBreakdown && hasCategoryQuery)
+                    {
+                        // This is CategorySpendingResult data
+                        var categoryQuery = jsonElement.TryGetProperty("categoryQuery", out var catQueryProp) ? catQueryProp.GetString() : "N/A";
+                        var totalSpending = jsonElement.TryGetProperty("totalSpending", out var spendingProp) ? spendingProp.GetDecimal() : 0;
+                        var transactionCount = jsonElement.TryGetProperty("transactionCount", out var countProp) ? countProp.GetInt32() : 0;
+                        var startDate = jsonElement.TryGetProperty("startDate", out var startProp) ? startProp.GetString() : "N/A";
+                        var endDate = jsonElement.TryGetProperty("endDate", out var endProp) ? endProp.GetString() : "N/A";
+                        var customerName = jsonElement.TryGetProperty("customerName", out var custProp) ? custProp.GetString() : "";
+                        
+                        var formatted = $"Function {functionName} returned spending analysis for '{categoryQuery}':\n\n";
+                        formatted += $"Total Spending: {totalSpending:C}\n";
+                        formatted += $"Transaction Count: {transactionCount}\n";
+                        if (startDate != "N/A" && endDate != "N/A")
+                        {
+                            formatted += $"Date Range: {startDate} to {endDate}\n";
+                        }
+                        if (!string.IsNullOrEmpty(customerName))
+                        {
+                            formatted += $"Customer: {customerName}\n";
+                        }
+                        formatted += "\nBreakdown by RGS Code:\n";
+                        
+                        // Handle breakdown array
+                        if (jsonElement.TryGetProperty("breakdown", out var breakdownProp) && breakdownProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        {
+                            var breakdownArray = breakdownProp.EnumerateArray();
+                            if (breakdownArray.Any())
+                            {
+                                foreach (var breakdown in breakdownArray)
+                                {
+                                    if (breakdown.ValueKind == System.Text.Json.JsonValueKind.Object)
+                                    {
+                                        var rgsCode = breakdown.TryGetProperty("rgsCode", out var rgsCodeProp) ? rgsCodeProp.GetString() : "N/A";
+                                        var rgsDescription = breakdown.TryGetProperty("rgsDescription", out var rgsDescProp) ? rgsDescProp.GetString() : "N/A";
+                                        var rgsShortDescription = breakdown.TryGetProperty("rgsShortDescription", out var rgsShortProp) ? rgsShortProp.GetString() : "";
+                                        var amount = breakdown.TryGetProperty("amount", out var amountProp) ? amountProp.GetDecimal() : 0;
+                                        var transCount = breakdown.TryGetProperty("transactionCount", out var transCountProp) ? transCountProp.GetInt32() : 0;
+                                        
+                                        formatted += $"• RGS Code: {rgsCode}\n";
+                                        formatted += $"  Description: {rgsDescription}\n";
+                                        if (!string.IsNullOrEmpty(rgsShortDescription))
+                                        {
+                                            formatted += $"  Short Description: {rgsShortDescription}\n";
+                                        }
+                                        formatted += $"  Amount: {amount:C}\n";
+                                        formatted += $"  Transactions: {transCount}\n\n";
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                formatted += "No spending found for the specified criteria.\n";
+                            }
+                        }
+                        else
+                        {
+                            formatted += "No breakdown data available.\n";
+                        }
+                        
+                        return formatted;
+                    }
+                    else
+                    {
+                        // Generic object handling
+                        return $"Function {functionName} returned object data: {jsonElement}";
                     }
                 }
                 else
@@ -1301,6 +1058,197 @@ namespace TransactionLabeler.API.Services
             }
 
             return await GetTopExpenseCategoriesForDateRangeAsync(connectionString, rangeStart, rangeEnd, customerName, topN);
+        }
+
+        public async Task<CategorySpendingResult> GetCategorySpendingAsync(string connectionString, string categoryQuery, DateTime? startDate, DateTime? endDate, int? year, string? customerName = null)
+        {
+            // Determine date range
+            DateTime rangeStart, rangeEnd;
+            if (startDate.HasValue && endDate.HasValue)
+            {
+                rangeStart = startDate.Value;
+                rangeEnd = endDate.Value;
+            }
+            else if (year.HasValue)
+            {
+                rangeStart = new DateTime(year.Value, 1, 1);
+                rangeEnd = new DateTime(year.Value, 12, 31);
+            }
+            else
+            {
+                var now = DateTime.Now;
+                rangeStart = new DateTime(now.Year, 1, 1);
+                rangeEnd = new DateTime(now.Year, 12, 31);
+            }
+
+            // Handle customer name fuzzy matching
+            if (!string.IsNullOrWhiteSpace(customerName))
+            {
+                var similarCustomers = await FindSimilarCustomerNamesAsync(connectionString, customerName, rangeStart, rangeEnd);
+                
+                if (!similarCustomers.Any(c => string.Equals(c, customerName, StringComparison.OrdinalIgnoreCase)) && similarCustomers.Any())
+                {
+                    Console.WriteLine($"Customer '{customerName}' not found. Similar customers found: {string.Join(", ", similarCustomers)}");
+                    return new CategorySpendingResult
+                    {
+                        CategoryQuery = categoryQuery,
+                        CustomerName = customerName,
+                        StartDate = rangeStart,
+                        EndDate = rangeEnd,
+                        TotalSpending = 0,
+                        TransactionCount = 0,
+                        Breakdown = new List<CategorySpendingBreakdown>
+                        {
+                            new CategorySpendingBreakdown
+                            {
+                                RgsCode = "CUSTOMER_CLARIFICATION_NEEDED",
+                                RgsDescription = $"Customer '{customerName}' not found. Similar customers: {string.Join(", ", similarCustomers.Take(5))}",
+                                Amount = 0,
+                                TransactionCount = 0
+                            }
+                        }
+                    };
+                }
+            }
+
+            // First, find relevant categories using vector search (limit to 5 for performance)
+            var relevantCategories = await SearchCategoriesByVectorAsync(connectionString, categoryQuery, 5, customerName);
+            
+            if (relevantCategories.Count == 0)
+            {
+                return new CategorySpendingResult
+                {
+                    CategoryQuery = categoryQuery,
+                    CustomerName = customerName,
+                    StartDate = rangeStart,
+                    EndDate = rangeEnd,
+                    TotalSpending = 0,
+                    TransactionCount = 0,
+                    Breakdown = []
+                };
+            }
+
+            // Extract RGS codes from the found categories
+            var rgsCodes = relevantCategories.Select(c => c.RgsCode).Where(c => !string.IsNullOrEmpty(c)).ToList();
+            
+            // If no RGS codes found, return empty result
+            if (!rgsCodes.Any())
+            {
+                return new CategorySpendingResult
+                {
+                    CategoryQuery = categoryQuery,
+                    CustomerName = customerName,
+                    StartDate = rangeStart,
+                    EndDate = rangeEnd,
+                    TotalSpending = 0,
+                    TransactionCount = 0,
+                    Breakdown = []
+                };
+            }
+            
+            // Calculate spending for these categories
+            var results = new List<CategorySpendingBreakdown>();
+            decimal totalSpending = 0;
+            int totalTransactionCount = 0;
+
+            // Build SQL with proper parameter handling (avoid string.Format)
+            var rgsCodeParams = new List<string>();
+            var parameters = new List<SqlParameter>();
+            
+            for (int i = 0; i < rgsCodes.Count; i++)
+            {
+                var paramName = $"@RgsCode{i}";
+                rgsCodeParams.Add(paramName);
+                parameters.Add(new SqlParameter(paramName, rgsCodes[i]));
+            }
+            
+            string sql = $@"
+                SELECT 
+                    r.rgsCode AS RgsCode,
+                    r.rgsDescription AS RgsDescription,
+                    r.rgsShortDescription AS RgsShortDescription,
+                    SUM(ABS(t.Amount)) AS TotalAmount,
+                    COUNT(*) AS TransactionCount
+                FROM dbo.inversbanktransaction t
+                LEFT JOIN dbo.rgsmapping r ON t.rgsCode = r.rgsCode
+                WHERE t.af_bij = 'Af'
+                    AND t.TransactionDate >= @StartDate
+                    AND t.TransactionDate < @EndDate
+                    AND (@CustomerName IS NULL OR t.CustomerName = @CustomerName)
+                    AND t.rgsCode IN ({string.Join(",", rgsCodeParams)})
+                GROUP BY r.rgsCode, r.rgsDescription, r.rgsShortDescription
+                ORDER BY TotalAmount DESC";
+
+            using var conn = new SqlConnection(connectionString);
+            using var cmd = new SqlCommand(sql, conn);
+            cmd.CommandTimeout = 30; // Increased timeout for complex queries
+            
+            cmd.Parameters.AddWithValue("@StartDate", rangeStart.Date);
+            cmd.Parameters.AddWithValue("@EndDate", rangeEnd.Date.AddDays(1).AddTicks(-1));
+            cmd.Parameters.AddWithValue("@CustomerName", customerName ?? (object)DBNull.Value);
+            
+            foreach (var param in parameters)
+            {
+                cmd.Parameters.Add(param);
+            }
+
+                        try
+            {
+                await conn.OpenAsync();
+                using var reader = await cmd.ExecuteReaderAsync();
+                
+                while (await reader.ReadAsync())
+                {
+                    var amount = reader.IsDBNull(3) ? 0 : reader.GetDecimal(3);
+                    var transactionCount = reader.IsDBNull(4) ? 0 : reader.GetInt32(4);
+                    
+                    results.Add(new CategorySpendingBreakdown
+                    {
+                        RgsCode = reader.IsDBNull(0) ? "" : reader.GetString(0),
+                        RgsDescription = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                        RgsShortDescription = reader.IsDBNull(2) ? "" : reader.GetString(2),
+                        Amount = amount,
+                        TransactionCount = transactionCount
+                    });
+                    
+                    totalSpending += amount;
+                    totalTransactionCount += transactionCount;
+                }
+
+                return new CategorySpendingResult
+                {
+                    CategoryQuery = categoryQuery,
+                    CustomerName = customerName,
+                    StartDate = rangeStart,
+                    EndDate = rangeEnd,
+                    TotalSpending = totalSpending,
+                    TransactionCount = totalTransactionCount,
+                    Breakdown = results
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in GetCategorySpendingAsync: {ex.Message}");
+                return new CategorySpendingResult
+                {
+                    CategoryQuery = categoryQuery,
+                    CustomerName = customerName,
+                    StartDate = rangeStart,
+                    EndDate = rangeEnd,
+                    TotalSpending = 0,
+                    TransactionCount = 0,
+                    Breakdown = new List<CategorySpendingBreakdown>
+                    {
+                        new CategorySpendingBreakdown
+                        {
+                            RgsCode = "ERROR",
+                            RgsDescription = $"Database error: {ex.Message}",
+                            Amount = 0,
+                            TransactionCount = 0
+                        }
+                    }
+                };
+            }
         }
 
         // New method to find similar customer names
