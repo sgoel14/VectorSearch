@@ -8,6 +8,7 @@ using System.Linq;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace TransactionLabeler.API.Controllers
 {
@@ -58,7 +59,8 @@ namespace TransactionLabeler.API.Controllers
             try
             {
                 string connectionString = _configuration.GetConnectionString("DefaultConnection");
-                var result = await _transactionService.ProcessIntelligentQueryWithToolsAsync(connectionString, query);
+                var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
+                var result = await semanticKernelService.ProcessIntelligentQueryWithAdvancedFeaturesAsync(connectionString, query, "legacy-migration");
                 
                 return Ok(new { 
                     query = query,
@@ -95,23 +97,17 @@ namespace TransactionLabeler.API.Controllers
         }
 
         [HttpGet("chat-history/{sessionId}")]
-        public async Task<IActionResult> GetChatHistory(string sessionId)
+        public async Task<ActionResult<List<object>>> GetChatHistory(string sessionId)
         {
             try
             {
                 var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
-                var history = await semanticKernelService.GetChatHistoryAsync(sessionId);
-                
-                return Ok(new { 
-                    sessionId = sessionId,
-                    chatHistory = history,
-                    messageCount = history.Count,
-                    timestamp = DateTime.UtcNow
-                });
+                var chatHistory = await semanticKernelService.GetChatHistoryAsync(sessionId);
+                return Ok(chatHistory);
             }
             catch (Exception ex)
             {
-                return BadRequest(new { error = ex.Message });
+                return BadRequest($"Error retrieving chat history: {ex.Message}");
             }
         }
 

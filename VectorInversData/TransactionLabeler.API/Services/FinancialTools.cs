@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Threading.Tasks;
-using Microsoft.Extensions.AI;
+
 using Microsoft.SemanticKernel;
 using TransactionLabeler.API.Models;
 
@@ -71,6 +71,9 @@ namespace TransactionLabeler.API.Services
             string? customerName = null,
             int topCategories = 3)
         {
+            // DEBUG: Function is actually being called!
+            Console.WriteLine($"🔥 REAL FUNCTION CALLED: GetTopTransactionsForCategory with categoryQuery='{categoryQuery}', year={year}, topN={topN}, customerName='{customerName}'");
+            
             // Ensure topCategories is at least 1 to avoid empty results
             if (topCategories <= 0)
             {

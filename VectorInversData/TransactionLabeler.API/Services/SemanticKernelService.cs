@@ -1,24 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Microsoft.Extensions.AI;
+using System.Linq;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
 using TransactionLabeler.API.Models;
 using TransactionLabeler.API.Services;
-using System.Text.Json;
-using System.Linq;
-using Azure.AI.OpenAI;
-using System.ClientModel;
-using Azure; // Added for .TakeLast() and .Select()
 
 namespace TransactionLabeler.API.Services
 {
     public interface ISemanticKernelService
     {
         Task<string> ProcessIntelligentQueryWithAdvancedFeaturesAsync(string connectionString, string query, string? sessionId = null);
-        Task<List<ChatMessage>> GetChatHistoryAsync(string sessionId);
+        Task<List<object>> GetChatHistoryAsync(string sessionId);
         Task ClearChatHistoryAsync(string sessionId);
         Task<string> GetContextSummaryAsync(string sessionId);
     }
@@ -35,11 +30,11 @@ namespace TransactionLabeler.API.Services
         // Custom message structure to store both role and content
         private class ChatMessageInfo
         {
-            public ChatRole Role { get; set; }
+            public AuthorRole Role { get; set; }
             public string Content { get; set; }
             public DateTime Timestamp { get; set; }
 
-            public ChatMessageInfo(ChatRole role, string content)
+            public ChatMessageInfo(AuthorRole role, string content)
             {
                 Role = role;
                 Content = content;
@@ -54,6 +49,7 @@ namespace TransactionLabeler.API.Services
             _configuration = configuration;
             _chatHistory = new Dictionary<string, List<ChatMessageInfo>>();
             _contextSummaries = new Dictionary<string, string>();
+            
             // Initialize Semantic Kernel with the existing IChatClient foundation
             _kernel = Kernel.CreateBuilder()
                 .AddAzureOpenAIChatCompletion(
@@ -72,56 +68,61 @@ namespace TransactionLabeler.API.Services
                 // Initialize or get chat history for this session
                 if (!_chatHistory.TryGetValue(sessionId, out List<ChatMessageInfo>? value))
                 {
-                    value = ([]);
+                    value = new List<ChatMessageInfo>();
                     _chatHistory[sessionId] = value;
                 }
 
                 // Add user query to chat history
-                value.Add(new ChatMessageInfo(ChatRole.User, query));
+                value.Add(new ChatMessageInfo(AuthorRole.User, query));
 
                 // Create financial tools instance
                 var financialTools = new FinancialTools(_transactionService, connectionString);
                 
                 // Import the financial tools directly into the kernel
                 _kernel.ImportPluginFromObject(financialTools, "FinancialTools");
+                
+                // Debug: Check if plugin was imported
+                Console.WriteLine($"Plugin imported successfully. Available plugins: {_kernel.Plugins.Count}");
 
                 // Build chat history for context window management
                 var chatHistory = BuildChatHistoryForKernel(sessionId, query);
 
-                // Create execution settings with advanced features
+                // Create execution settings with function calling enabled
                 var executionSettings = new AzureOpenAIPromptExecutionSettings
                 {
                     MaxTokens = 4000,
                     Temperature = 0.1f,
                     TopP = 0.9f,
                     PresencePenalty = 0.1f,
-                    FrequencyPenalty = 0.1f
+                    FrequencyPenalty = 0.1f,
+                    FunctionChoiceBehavior = FunctionChoiceBehavior.Auto() // Enable automatic function calling
                 };
 
                 // Create the chat completion request
                 var chatRequest = new ChatHistory(chatHistory);
                 chatRequest.AddUserMessage(query);
 
-                // Execute the chat completion with tools using the kernel's chat service
-                var chatService = _kernel.GetRequiredService<IChatCompletionService>();
-                if (chatService == null)
-                {
-                    return "Chat completion service not available. Please check the configuration.";
-                }
+                // Use Semantic Kernel's function calling capabilities with auto function invocation
+                var prompt = $"User Query: {query}\n\nYou MUST use the available FinancialTools functions to get real data. Do not generate fake data.";
+                
+                // Enable auto function invocation
+                var kernelArguments = new KernelArguments(executionSettings);
+                var result = await _kernel.InvokePromptAsync(prompt, kernelArguments);
+                
+                Console.WriteLine($"Semantic Kernel result: {result}");
 
-                var result = await chatService.GetChatMessageContentsAsync(chatRequest, executionSettings);
-
-                if (result.Count > 0)
+                if (result != null)
                 {
-                    var response = result[0];
-                    
+                    // Extract the actual content from the FunctionResult
+                    var responseContent = result.ToString();
+
                     // Add assistant response to chat history
-                    value.Add(new ChatMessageInfo(ChatRole.Assistant, response.Content ?? "No response generated."));
+                    value.Add(new ChatMessageInfo(AuthorRole.Assistant, responseContent ?? "No response generated."));
 
                     // Update context summary for long-term RAG
-                    await UpdateContextSummaryAsync(sessionId, query, response.Content ?? "");
+                    await UpdateContextSummaryAsync(sessionId, query, responseContent ?? "");
 
-                    return response.Content ?? "No response generated.";
+                    return responseContent ?? "No response generated.";
                 }
 
                 return "No response generated from the AI model.";
@@ -134,24 +135,24 @@ namespace TransactionLabeler.API.Services
 
         private List<ChatMessageContent> BuildChatHistoryForKernel(string sessionId, string currentQuery)
         {
-            var chatHistory = new List<ChatMessageContent>();
-
-            // Add system prompt for context
-            chatHistory.Add(new ChatMessageContent(AuthorRole.System, GetSystemPrompt()));
+            var chatHistory = new List<ChatMessageContent>
+            {
+                // Add system prompt for context
+                new(AuthorRole.System, GetSystemPrompt())
+            };
 
             // Add recent chat history for context window management (last 10 messages)
-            if (_chatHistory.ContainsKey(sessionId))
+            if (_chatHistory.TryGetValue(sessionId, out List<ChatMessageInfo>? value))
             {
-                var recentHistory = _chatHistory[sessionId].TakeLast(10);
+                var recentHistory = value.TakeLast(10);
                 foreach (var message in recentHistory)
                 {
-                    var role = message.Role == ChatRole.User ? AuthorRole.User : AuthorRole.Assistant;
-                    chatHistory.Add(new ChatMessageContent(role, message.Content));
+                    chatHistory.Add(new ChatMessageContent(message.Role, message.Content));
                 }
             }
 
             // Add context summary if available
-            if (_contextSummaries.ContainsKey(sessionId))
+            if (_contextSummaries.TryGetValue(sessionId, out string? summary))
             {
                 chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Context Summary: {_contextSummaries[sessionId]}"));
             }
@@ -228,13 +229,17 @@ namespace TransactionLabeler.API.Services
                 ";
         }
 
-        public async Task<List<ChatMessage>> GetChatHistoryAsync(string sessionId)
+        public async Task<List<object>> GetChatHistoryAsync(string sessionId)
         {
             if (!_chatHistory.ContainsKey(sessionId))
-                return new List<ChatMessage>();
+                return new List<object>();
 
-            // Convert ChatMessageInfo to ChatMessage for compatibility
-            return _chatHistory[sessionId].Select(msg => new ChatMessage(msg.Role, msg.Content)).ToList();
+            // Convert ChatMessageInfo to simple objects for compatibility
+            return _chatHistory[sessionId].Select(msg => new { 
+                Role = msg.Role.ToString(), 
+                Content = msg.Content, 
+                Timestamp = msg.Timestamp 
+            }).Cast<object>().ToList();
         }
 
         public async Task ClearChatHistoryAsync(string sessionId)
@@ -282,5 +287,7 @@ namespace TransactionLabeler.API.Services
                 Console.WriteLine($"Error updating context summary: {ex.Message}");
             }
         }
+
+
     }
 }
