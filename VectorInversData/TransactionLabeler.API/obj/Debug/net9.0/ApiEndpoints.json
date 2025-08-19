@@ -1,6 +1,54 @@
 [
   {
     "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
+    "Method": "GetChatHistory",
+    "RelativePath": "api/Transactions/chat-history/{sessionId}",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "sessionId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
+    "Method": "ClearChatHistory",
+    "RelativePath": "api/Transactions/chat-history/{sessionId}",
+    "HttpMethod": "DELETE",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "sessionId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
+    "Method": "GetContextSummary",
+    "RelativePath": "api/Transactions/context-summary/{sessionId}",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [
+      {
+        "Name": "sessionId",
+        "Type": "System.String",
+        "IsRequired": true
+      }
+    ],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
     "Method": "HealthCheck",
     "RelativePath": "api/Transactions/health",
     "HttpMethod": "GET",
@@ -11,15 +59,15 @@
   },
   {
     "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
-    "Method": "IntelligentQueryWithTools",
-    "RelativePath": "api/Transactions/intelligent-query-with-tools",
+    "Method": "IntelligentQueryAdvanced",
+    "RelativePath": "api/Transactions/intelligent-query-advanced",
     "HttpMethod": "POST",
     "IsController": true,
     "Order": 0,
     "Parameters": [
       {
-        "Name": "query",
-        "Type": "System.String",
+        "Name": "request",
+        "Type": "TransactionLabeler.API.Controllers.AdvancedQueryRequest",
         "IsRequired": true
       }
     ],
@@ -27,8 +75,8 @@
   },
   {
     "ContainingType": "TransactionLabeler.API.Controllers.TransactionsController",
-    "Method": "IntelligentVectorSearch",
-    "RelativePath": "api/Transactions/intelligent-vector-search",
+    "Method": "IntelligentQueryWithTools",
+    "RelativePath": "api/Transactions/intelligent-query-with-tools",
     "HttpMethod": "POST",
     "IsController": true,
     "Order": 0,

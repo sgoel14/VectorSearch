@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "XXyw6JN+aGw=",
+  "dgSpecHash": "ASk0MmlKBjI=",
   "success": true,
   "projectFilePath": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\TransactionLabeler.API.csproj",
   "expectedPackageFiles": [
@@ -11,6 +11,7 @@
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.aspnetcore.openapi\\8.0.5\\microsoft.aspnetcore.openapi.8.0.5.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\8.0.0\\microsoft.bcl.asyncinterfaces.8.0.0.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.bcl.cryptography\\9.0.4\\microsoft.bcl.cryptography.9.0.4.nupkg.sha512",
+    "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.bcl.hashcode\\1.1.1\\microsoft.bcl.hashcode.1.1.1.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.build.framework\\17.8.3\\microsoft.build.framework.17.8.3.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.build.locator\\1.7.8\\microsoft.build.locator.1.7.8.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.codeanalysis.analyzers\\3.3.4\\microsoft.codeanalysis.analyzers.3.3.4.nupkg.sha512",
@@ -42,6 +43,7 @@
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\9.0.6\\microsoft.extensions.logging.abstractions.9.0.6.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.extensions.options\\9.0.6\\microsoft.extensions.options.9.0.6.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.extensions.primitives\\9.0.6\\microsoft.extensions.primitives.9.0.6.nupkg.sha512",
+    "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.extensions.vectordata.abstractions\\9.0.0-preview.1.24523.1\\microsoft.extensions.vectordata.abstractions.9.0.0-preview.1.24523.1.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.identity.client\\4.61.3\\microsoft.identity.client.4.61.3.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.identity.client.extensions.msal\\4.61.3\\microsoft.identity.client.extensions.msal.4.61.3.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.identitymodel.abstractions\\7.5.0\\microsoft.identitymodel.abstractions.7.5.0.nupkg.sha512",
@@ -51,6 +53,11 @@
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.identitymodel.protocols.openidconnect\\7.5.0\\microsoft.identitymodel.protocols.openidconnect.7.5.0.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.identitymodel.tokens\\7.5.0\\microsoft.identitymodel.tokens.7.5.0.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.openapi\\1.6.23\\microsoft.openapi.1.6.23.nupkg.sha512",
+    "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.semantickernel\\1.29.0\\microsoft.semantickernel.1.29.0.nupkg.sha512",
+    "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.semantickernel.abstractions\\1.29.0\\microsoft.semantickernel.abstractions.1.29.0.nupkg.sha512",
+    "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.semantickernel.connectors.azureopenai\\1.29.0\\microsoft.semantickernel.connectors.azureopenai.1.29.0.nupkg.sha512",
+    "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.semantickernel.connectors.openai\\1.29.0\\microsoft.semantickernel.connectors.openai.1.29.0.nupkg.sha512",
+    "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.semantickernel.core\\1.29.0\\microsoft.semantickernel.core.1.29.0.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.sqlserver.server\\1.0.0\\microsoft.sqlserver.server.1.0.0.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\mono.texttemplating\\3.0.0\\mono.texttemplating.3.0.0.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\openai\\2.1.0\\openai.2.1.0.nupkg.sha512",
@@ -75,14 +82,63 @@
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.io.pipelines\\7.0.0\\system.io.pipelines.7.0.0.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.memory\\4.5.4\\system.memory.4.5.4.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.memory.data\\9.0.0\\system.memory.data.9.0.0.nupkg.sha512",
+    "C:\\Users\\shivam.goel\\.nuget\\packages\\system.numerics.tensors\\8.0.0\\system.numerics.tensors.8.0.0.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.reflection.metadata\\7.0.0\\system.reflection.metadata.7.0.0.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.security.cryptography.pkcs\\9.0.4\\system.security.cryptography.pkcs.9.0.4.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.security.cryptography.protecteddata\\9.0.4\\system.security.cryptography.protecteddata.9.0.4.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.text.json\\9.0.6\\system.text.json.9.0.6.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.threading.channels\\9.0.0\\system.threading.channels.9.0.0.nupkg.sha512",
-    "C:\\Users\\shivam.goel\\.nuget\\packages\\system.threading.tasks.extensions\\4.5.4\\system.threading.tasks.extensions.4.5.4.nupkg.sha512",
-    "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.net.sdk.compilers.toolset\\9.0.302\\microsoft.net.sdk.compilers.toolset.9.0.302.nupkg.sha512"
+    "C:\\Users\\shivam.goel\\.nuget\\packages\\system.threading.tasks.extensions\\4.5.4\\system.threading.tasks.extensions.4.5.4.nupkg.sha512"
   ],
-  "logs": []
+  "logs": [
+    {
+      "code": "NU1603",
+      "level": "Warning",
+      "message": "TransactionLabeler.API depends on Microsoft.SemanticKernel (>= 1.29.0-alpha) but Microsoft.SemanticKernel 1.29.0-alpha was not found. Microsoft.SemanticKernel 1.29.0 was resolved instead.",
+      "projectPath": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\TransactionLabeler.API.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\TransactionLabeler.API.csproj",
+      "libraryId": "Microsoft.SemanticKernel",
+      "targetGraphs": [
+        "net9.0"
+      ]
+    },
+    {
+      "code": "NU1603",
+      "level": "Warning",
+      "message": "TransactionLabeler.API depends on Microsoft.SemanticKernel.Connectors.AzureOpenAI (>= 1.29.0-alpha) but Microsoft.SemanticKernel.Connectors.AzureOpenAI 1.29.0-alpha was not found. Microsoft.SemanticKernel.Connectors.AzureOpenAI 1.29.0 was resolved instead.",
+      "projectPath": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\TransactionLabeler.API.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\TransactionLabeler.API.csproj",
+      "libraryId": "Microsoft.SemanticKernel.Connectors.AzureOpenAI",
+      "targetGraphs": [
+        "net9.0"
+      ]
+    },
+    {
+      "code": "NU1608",
+      "level": "Warning",
+      "message": "Detected package version outside of dependency constraint: Microsoft.SemanticKernel.Connectors.AzureOpenAI 1.29.0 requires Azure.AI.OpenAI (= 2.1.0-beta.2) but version Azure.AI.OpenAI 2.1.0 was resolved.",
+      "projectPath": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\TransactionLabeler.API.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\TransactionLabeler.API.csproj",
+      "libraryId": "Azure.AI.OpenAI",
+      "targetGraphs": [
+        "net9.0"
+      ]
+    },
+    {
+      "code": "NU1608",
+      "level": "Warning",
+      "message": "Detected package version outside of dependency constraint: Microsoft.SemanticKernel.Connectors.OpenAI 1.29.0 requires OpenAI (= 2.1.0-beta.2) but version OpenAI 2.1.0 was resolved.",
+      "projectPath": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\TransactionLabeler.API.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\TransactionLabeler.API.csproj",
+      "libraryId": "OpenAI",
+      "targetGraphs": [
+        "net9.0"
+      ]
+    }
+  ]
 }

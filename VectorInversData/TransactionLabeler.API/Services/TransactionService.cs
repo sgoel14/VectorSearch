@@ -21,7 +21,6 @@ namespace TransactionLabeler.API.Services
         Task<List<(Guid Id, string? Description, decimal? Amount, DateTime? TransactionDate, string? RgsCode, string? RgsDescription, string? RgsShortDescription, float Similarity)>> VectorSearchInSqlAsync(string connectionString, float[] queryEmbedding);
         Task<List<PersistentBankStatementLine>> GetPersistentBankStatementLinesWithEmbeddingsPageAsync(int page, int pageSize);
         Task UpdateAllInversBankTransactionEmbeddingsAsync(string connectionString);
-        Task<List<(Guid Id, string? Description, decimal? Amount, DateTime? TransactionDate, string? RgsCode, string? RgsDescription, string? RgsShortDescription, float Similarity)>> IntelligentVectorSearchAsync(string connectionString, string query);
         
 
         
@@ -205,57 +204,6 @@ namespace TransactionLabeler.API.Services
                 ));
             }
             return results;
-        }
-
-        // New intelligent vector search method
-        public async Task<List<(Guid Id, string? Description, decimal? Amount, DateTime? TransactionDate, string? RgsCode, string? RgsDescription, string? RgsShortDescription, float Similarity)>> IntelligentVectorSearchAsync(string connectionString, string query)
-        {
-            // 1. Classify the query to determine which embedding to use
-            var queryType = ClassifyQuery(query);
-            
-            // 2. Get embedding for the query
-            var queryEmbedding = await _embeddingService.GetEmbeddingAsync(query);
-            
-            // 3. Determine which embedding column to search
-            string embeddingColumn = GetEmbeddingColumnForQueryType(queryType);
-            
-            // 4. Perform vector search with the appropriate embedding
-            return await PerformSpecializedVectorSearchAsync(connectionString, queryEmbedding, embeddingColumn, queryType);
-        }
-
-        // Classify the query type based on keywords and patterns
-        private QueryType ClassifyQuery(string query)
-        {
-            var lowerQuery = query.ToLower();
-            
-            // Amount-based queries
-            if (lowerQuery.Contains("amount") || lowerQuery.Contains("highest") || lowerQuery.Contains("largest") || 
-                lowerQuery.Contains("money") || lowerQuery.Contains("payment") || lowerQuery.Contains("value") ||
-                lowerQuery.Contains("expensive") || lowerQuery.Contains("cheap") || lowerQuery.Contains("cost"))
-            {
-                return QueryType.Amount;
-            }
-            
-            // Date-based queries
-            if (lowerQuery.Contains("july") || lowerQuery.Contains("august") || lowerQuery.Contains("month") || 
-                lowerQuery.Contains("year") || lowerQuery.Contains("date") || lowerQuery.Contains("when") ||
-                lowerQuery.Contains("january") || lowerQuery.Contains("february") || lowerQuery.Contains("march") ||
-                lowerQuery.Contains("april") || lowerQuery.Contains("may") || lowerQuery.Contains("june") ||
-                lowerQuery.Contains("september") || lowerQuery.Contains("october") || lowerQuery.Contains("november") ||
-                lowerQuery.Contains("december") || lowerQuery.Contains("week") || lowerQuery.Contains("day"))
-            {
-                return QueryType.Date;
-            }
-            
-            // Category-based queries
-            if (lowerQuery.Contains("category") || lowerQuery.Contains("salary") || lowerQuery.Contains("type") ||
-                lowerQuery.Contains("rgs") || lowerQuery.Contains("classification") || lowerQuery.Contains("group"))
-            {
-                return QueryType.Category;
-            }
-            
-            // Content-based queries (default)
-            return QueryType.Content;
         }
 
         // Get the appropriate embedding column for the query type

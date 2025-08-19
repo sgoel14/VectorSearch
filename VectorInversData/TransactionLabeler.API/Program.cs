@@ -40,6 +40,11 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // Add services
 builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
 builder.Services.AddScoped<ITransactionService, TransactionService>();
+builder.Services.AddScoped<ISemanticKernelService>(provider =>
+    new SemanticKernelService(
+        provider.GetRequiredService<ITransactionService>(),
+        provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")!,
+        provider.GetRequiredService<IConfiguration>()));
 
 // Configure Microsoft.Extensions.AI ChatClient for function calling
 builder.Services.AddSingleton<IChatClient>(provider =>
