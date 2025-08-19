@@ -61,7 +61,7 @@ namespace TransactionLabeler.API.Services
             return await _transactionService.GetTopExpenseCategoriesFlexibleAsync(_connectionString, parsedStartDate, parsedEndDate, year, customerName, topN);
         }
 
-        [KernelFunction, Description("Finds and returns transaction details for ANY specific category using semantic understanding. Works with natural language queries about transactions, transaction lists, or transaction details. Handles queries like 'list transactions for staff drink and food', 'get transactions for marketing', 'find transactions for travel', 'show me transactions for office supplies', 'top 10 transactions for car repair', 'transactions for restaurant expenses', 'display transactions for utilities', 'retrieve transactions for advertising', etc. First searches for relevant categories using semantic similarity, then returns the top transactions for those categories. Extract the category from the user's query. If no number specified, use 10. Only include year parameter if explicitly mentioned in the query.")]
+        [KernelFunction, Description("Finds and returns transaction details for a SPECIFIC category using semantic understanding. Use this when the user wants to see actual transaction records for a particular category. Works with queries like 'list transactions for staff drink and food', 'get transactions for marketing', 'find transactions for travel', 'show me transactions for office supplies', 'top 10 transactions for car repair', 'transactions for restaurant expenses', 'display transactions for utilities', 'retrieve transactions for advertising', etc. First searches for relevant categories using semantic similarity, then returns the top transactions for those categories. Extract the category from the user's query. If no number specified, use 10. Only include year parameter if explicitly mentioned in the query.")]
         public async Task<List<TransactionResult>> GetTopTransactionsForCategory(
             string categoryQuery,
             object? startDate = null,
@@ -87,16 +87,22 @@ namespace TransactionLabeler.API.Services
             return await _transactionService.GetTopTransactionsForCategoryQueryAsync(_connectionString, categoryQuery, parsedStartDate, parsedEndDate, year, topN, customerName, topCategories);
         }
 
-        [KernelFunction, Description("Searches for and explores available categories using semantic understanding. Use this tool when the user wants to understand what categories are available, explore category options, or get information about available transaction categories. Examples: 'what categories are available', 'list all categories', 'show me categories', 'explore categories', 'travel categories', 'food categories', 'office expense categories', 'travel categories for Company ABC', 'search all categories for Nova Creations'. For 'all categories' queries, use a higher topCategories value like 50.")]
+        [KernelFunction, Description("PRIORITY 1 - ALL CATEGORIES FUNCTION: Use this function when the user asks for 'all categories', 'list all categories', 'show me all categories', 'what categories are available', 'categories for Nova Creations', 'all categories for Company ABC'. This function returns EVERY single category available in the system without any filtering. ALWAYS use this for 'all categories' requests. Set topCategories to 1000 to get everything. DO NOT use SearchCategories for 'all categories' requests.")]
+        public async Task<List<CategorySearchResult>> GetAllCategoriesForCustomer(int topCategories = 1000, string? customerName = null)
+        {
+            Console.WriteLine($"🔥 GetAllCategoriesForCustomer called with topCategories={topCategories}, customerName='{customerName}'");
+            var result = await _transactionService.SearchCategoriesByVectorAsync(_connectionString, null, topCategories, customerName);
+            Console.WriteLine($"🔥 GetAllCategoriesForCustomer returning {result.Count} categories");
+            return result;
+        }
+
+        [KernelFunction, Description("PRIORITY 2 - SPECIFIC CATEGORY SEARCH: WARNING: DO NOT use this function for 'all categories' requests! This function is ONLY for searching specific categories by topic. Use this for queries like 'travel categories', 'food categories', 'office expense categories', 'marketing categories', 'utility categories'. This function performs semantic search to find categories related to a specific topic. For 'all categories' or 'list all categories' requests, ALWAYS use GetAllCategoriesForCustomer instead.")]
         public async Task<List<CategorySearchResult>> SearchCategories(string categoryQuery, int topCategories = 5, string? customerName = null)
         {
-            // For "all categories" queries, increase the limit to get more results
-            if (string.IsNullOrWhiteSpace(categoryQuery) || categoryQuery.ToLower().Contains("all"))
-            {
-                topCategories = Math.Max(topCategories, 50); // Get more categories for "all" queries
-            }
-            
-            return await _transactionService.SearchCategoriesByVectorAsync(_connectionString, categoryQuery, topCategories, customerName);
+            Console.WriteLine($"🔍 SearchCategories called with categoryQuery='{categoryQuery}', topCategories={topCategories}, customerName='{customerName}'");
+            var result = await _transactionService.SearchCategoriesByVectorAsync(_connectionString, categoryQuery, topCategories, customerName);
+            Console.WriteLine($"🔍 SearchCategories returning {result.Count} categories");
+            return result;
         }
 
         [KernelFunction, Description("Calculates total spending for a specific category within a date range. Use for queries like 'How much did we spend on marketing last month?', 'What was our travel expenses in Q1 2024?', 'Total spending on office supplies this year', 'Marketing costs for Nova Creations in January', 'Travel expenses for Company ABC in 2023'. Extracts the category from the user's query and calculates total spending with breakdown by RGS codes. Only includes expense transactions (AfBij = 'Af').")]

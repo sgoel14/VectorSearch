@@ -1,14 +1,9 @@
-using System;
-using System.Threading.Tasks;
+using System.Globalization;
+using System.Text.Json;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using TransactionLabeler.API.Data;
 using TransactionLabeler.API.Models;
-using System.Text.Json;
-using Microsoft.Data.SqlClient;
-using System.Data;
-using System.Globalization;
-using System.Linq;
-using System.Collections.Generic;
 
 namespace TransactionLabeler.API.Services
 {
@@ -224,89 +219,161 @@ namespace TransactionLabeler.API.Services
             return dotProduct / (float)(Math.Sqrt(normA) * Math.Sqrt(normB));
         }
 
-        // Essential methods needed by FinancialTools
+        // New category-based transaction search methods - works for ANY category mentioned in the query
         public async Task<List<CategorySearchResult>> SearchCategoriesByVectorAsync(string connectionString, string categoryQuery, int topCategories = 5, string? customerName = null)
         {
-            var results = new List<CategorySearchResult>();
-            
-            // If no category query, return all categories
+            // Handle empty category query - just return all categories
             if (string.IsNullOrWhiteSpace(categoryQuery))
             {
-                string sql = @"
-                    SELECT DISTINCT TOP (@TopCategories)
-                        r.rgsCode AS RgsCode,
+                return await GetAllCategoriesAsync(connectionString, topCategories, customerName);
+            }
+
+            // Get embedding for the category query (only when not empty)
+            var queryEmbedding = await _embeddingService.GetEmbeddingAsync(categoryQuery);
+            string embeddingJson = "[" + string.Join(",", queryEmbedding.Select(f => f.ToString(CultureInfo.InvariantCulture))) + "]";
+
+            var whereConditions = new List<string>();
+            var parameters = new List<SqlParameter>();
+
+            // Base condition for vector search
+            whereConditions.Add("t.CategoryEmbedding IS NOT NULL");
+
+            // Add customer name filter if provided
+            if (!string.IsNullOrWhiteSpace(customerName))
+            {
+                whereConditions.Add("t.CustomerName = @CustomerName");
+                parameters.Add(new SqlParameter("@CustomerName", customerName));
+            }
+
+            string whereClause = "WHERE " + string.Join(" AND ", whereConditions);
+
+            string sql = $@"
+                SELECT TOP (@TopCategories)
+                    r.rgsDescription AS RgsDescription,
+                    r.rgsCode AS RgsCode,
+                    VECTOR_DISTANCE('cosine', t.CategoryEmbedding, CAST('{embeddingJson}' AS VECTOR({queryEmbedding.Length}))) AS similarity
+                FROM dbo.inversbanktransaction t
+                LEFT JOIN dbo.rgsmapping r ON t.rgsCode = r.rgsCode
+                {whereClause}
+                ORDER BY similarity ASC";
+
+            using var conn = new SqlConnection(connectionString);
+            using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@TopCategories", topCategories);
+            cmd.CommandTimeout = 20; // 20 second timeout for database operations
+
+            foreach (var param in parameters)
+            {
+                cmd.Parameters.Add(param);
+            }
+
+            await conn.OpenAsync();
+            using var reader = await cmd.ExecuteReaderAsync();
+            var results = new List<CategorySearchResult>();
+            while (await reader.ReadAsync())
+            {
+                results.Add(new CategorySearchResult
+                {
+                    RgsDescription = reader.IsDBNull(0) ? null : reader.GetString(0),
+                    RgsCode = reader.IsDBNull(1) ? null : reader.GetString(1),
+                    Similarity = (float)Convert.ToDouble(reader[2])
+                });
+            }
+            return results;
+        }
+
+        // Helper method to get all categories (for empty category query)
+        private async Task<List<CategorySearchResult>> GetAllCategoriesAsync(string connectionString, int topCategories, string? customerName)
+        {
+            // If topCategories is very high (like 1000), treat it as "get all" and remove TOP clause
+            bool getAllCategories = topCategories >= 1000;
+            
+            if (string.IsNullOrWhiteSpace(customerName) || customerName.ToLower().Contains("all"))
+            {
+                string sql = getAllCategories ? @"
+                    SELECT 
                         r.rgsDescription AS RgsDescription,
-                        1.0 AS Similarity
+                        r.rgsCode AS RgsCode,
+                        1.0 AS similarity
                     FROM dbo.rgsmapping r
                     WHERE r.rgsDescription IS NOT NULL
-                    ORDER BY r.rgsDescription";
+                    ORDER BY r.rgsDescription ASC" : $@"
+                    SELECT TOP (@TopCategories)
+                        r.rgsDescription AS RgsDescription,
+                        r.rgsCode AS RgsCode,
+                        1.0 AS similarity
+                    FROM dbo.rgsmapping r
+                    WHERE r.rgsDescription IS NOT NULL
+                    ORDER BY r.rgsDescription ASC";
 
                 using var conn = new SqlConnection(connectionString);
                 using var cmd = new SqlCommand(sql, conn);
-                cmd.Parameters.AddWithValue("@TopCategories", topCategories);
+                if (!getAllCategories)
+                {
+                    cmd.Parameters.AddWithValue("@TopCategories", topCategories);
+                }
+
                 await conn.OpenAsync();
                 using var reader = await cmd.ExecuteReaderAsync();
-                
+                var results = new List<CategorySearchResult>();
                 while (await reader.ReadAsync())
                 {
                     results.Add(new CategorySearchResult
                     {
-                        RgsCode = reader.GetString(0),
-                        RgsDescription = reader.GetString(1),
-                        Similarity = (float)reader.GetDouble(2)
+                        RgsDescription = reader.IsDBNull(0) ? null : reader.GetString(0),
+                        RgsCode = reader.IsDBNull(1) ? null : reader.GetString(1),
+                        Similarity = (float)Convert.ToDouble(reader[2])
                     });
                 }
                 return results;
             }
-
-            // Vector search for categories
-            var queryEmbedding = await _embeddingService.GetEmbeddingAsync(categoryQuery);
-            
-            string vectorSql = @"
-                SELECT TOP (@TopCategories)
-                    r.rgsCode AS RgsCode,
-                    r.rgsDescription AS RgsDescription,
-                    CAST(t.Embedding AS VARCHAR(MAX)) AS EmbeddingString
-                FROM dbo.inversbanktransaction t
-                LEFT JOIN dbo.rgsmapping r ON t.RgsCode = r.RgsCode
-                WHERE t.Embedding IS NOT NULL
-                    AND r.rgsDescription IS NOT NULL
-                    AND (@CustomerName IS NULL OR t.CustomerName LIKE @CustomerName)
-                GROUP BY r.rgsCode, r.rgsDescription, t.Embedding
-                ORDER BY r.rgsDescription";
-
-            using var conn2 = new SqlConnection(connectionString);
-            using var cmd2 = new SqlCommand(vectorSql, conn2);
-            cmd2.Parameters.AddWithValue("@TopCategories", topCategories);
-            cmd2.Parameters.AddWithValue("@CustomerName", customerName ?? (object)DBNull.Value);
-            await conn2.OpenAsync();
-            using var reader2 = await cmd2.ExecuteReaderAsync();
-
-            var categoryEmbeddings = new List<(string Code, string Description, float[] Embedding)>();
-            while (await reader2.ReadAsync())
+            else
             {
-                var embeddingString = reader2.GetString(2);
-                var embedding = JsonSerializer.Deserialize<float[]>(embeddingString);
-                categoryEmbeddings.Add((
-                    reader2.GetString(0),
-                    reader2.GetString(1),
-                    embedding
-                ));
-            }
+                // For specific customer queries, filter by customer transactions
+                string sql = getAllCategories ? @"
+                    SELECT 
+                        r.rgsDescription AS RgsDescription,
+                        r.rgsCode AS RgsCode,
+                        1.0 AS similarity
+                    FROM dbo.inversbanktransaction t
+                    LEFT JOIN dbo.rgsmapping r ON t.rgsCode = r.rgsCode
+                    WHERE t.CustomerName = @CustomerName
+                        AND r.rgsDescription IS NOT NULL
+                    GROUP BY r.rgsDescription, r.rgsCode
+                    ORDER BY r.rgsDescription ASC" : $@"
+                    SELECT TOP (@TopCategories)
+                        r.rgsDescription AS RgsDescription,
+                        r.rgsCode AS RgsCode,
+                        1.0 AS similarity
+                    FROM dbo.inversbanktransaction t
+                    LEFT JOIN dbo.rgsmapping r ON t.rgsCode = r.rgsCode
+                    WHERE t.CustomerName = @CustomerName
+                        AND r.rgsDescription IS NOT NULL
+                    GROUP BY r.rgsDescription, r.rgsCode
+                    ORDER BY r.rgsDescription ASC";
 
-            // Calculate similarities and sort
-            var similarities = categoryEmbeddings
-                .Select(cat => new CategorySearchResult
+                using var conn = new SqlConnection(connectionString);
+                using var cmd = new SqlCommand(sql, conn);
+                if (!getAllCategories)
                 {
-                    RgsCode = cat.Code,
-                    RgsDescription = cat.Description,
-                    Similarity = CalculateCosineSimilarity(queryEmbedding, cat.Embedding)
-                })
-                .OrderByDescending(r => r.Similarity)
-                .Take(topCategories)
-                .ToList();
+                    cmd.Parameters.AddWithValue("@TopCategories", topCategories);
+                }
+                cmd.Parameters.AddWithValue("@CustomerName", customerName);
 
-            return similarities;
+                await conn.OpenAsync();
+                using var reader = await cmd.ExecuteReaderAsync();
+                var results = new List<CategorySearchResult>();
+                while (await reader.ReadAsync())
+                {
+                    results.Add(new CategorySearchResult
+                    {
+                        RgsDescription = reader.IsDBNull(0) ? null : reader.GetString(0),
+                        RgsCode = reader.IsDBNull(1) ? null : reader.GetString(1),
+                        Similarity = (float)Convert.ToDouble(reader[2])
+                    });
+                }
+                return results;
+            }
         }
 
         public async Task<List<TransactionResult>> GetTopTransactionsForCategoriesAsync(string connectionString, List<string> rgsCodes, DateTime? startDate = null, DateTime? endDate = null, int? year = null, int topN = 10, string? customerName = null)
