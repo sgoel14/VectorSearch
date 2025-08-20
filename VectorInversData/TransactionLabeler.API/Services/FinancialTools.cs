@@ -84,7 +84,16 @@ namespace TransactionLabeler.API.Services
             DateTime? parsedStartDate = ParseDateParameter(startDate);
             DateTime? parsedEndDate = ParseDateParameter(endDate);
             
-            return await _transactionService.GetTopTransactionsForCategoryQueryAsync(_connectionString, categoryQuery, parsedStartDate, parsedEndDate, year, topN, customerName, topCategories);
+            var results = await _transactionService.GetTopTransactionsForCategoryQueryAsync(_connectionString, categoryQuery, parsedStartDate, parsedEndDate, year, topN, customerName, topCategories);
+            
+            // DEBUG: Log what we're returning
+            Console.WriteLine($"🔥 GetTopTransactionsForCategory returning {results.Count} transactions");
+            foreach (var result in results.Take(3)) // Log first 3 for debugging
+            {
+                Console.WriteLine($"🔥 Transaction: Amount={result.Amount}, Description='{result.Description}', RgsCode='{result.RgsCode}', RgsDescription='{result.RgsDescription}'");
+            }
+            
+            return results;
         }
 
         [KernelFunction, Description("PRIORITY 1 - ALL CATEGORIES FUNCTION: Use this function when the user asks for 'all categories', 'list all categories', 'show me all categories', 'what categories are available', 'categories for Nova Creations', 'all categories for Company ABC'. This function returns EVERY single category available in the system without any filtering. ALWAYS use this for 'all categories' requests. Set topCategories to 1000 to get everything. DO NOT use SearchCategories for 'all categories' requests.")]

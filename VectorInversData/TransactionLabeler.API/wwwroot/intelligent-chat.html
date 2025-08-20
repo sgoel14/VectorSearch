@@ -82,12 +82,7 @@
             background: linear-gradient(90deg, #4f46e5 0%, #2563eb 100%);
             box-shadow: 0 4px 16px rgba(99,102,241,0.12);
         }
-        button.secondary {
-            background: #6b7280;
-        }
-        button.secondary:hover {
-            background: #4b5563;
-        }
+
         .session-info {
             background: #e0f2fe;
             border-radius: 8px;
@@ -145,6 +140,9 @@
         }
         #results {
             margin-top: 1.5em;
+            max-height: 600px;
+            overflow-y: auto;
+            padding-right: 10px;
         }
         .result {
             background: #f3f4f6;
@@ -153,6 +151,7 @@
             margin-bottom: 1.1em;
             box-shadow: 0 2px 8px rgba(60,72,100,0.06);
             transition: box-shadow 0.2s;
+            border-left: 4px solid #6366f1;
         }
         .result:hover {
             box-shadow: 0 6px 18px rgba(99,102,241,0.13);
@@ -165,7 +164,12 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-top: 2em;
+            margin: 1em 0;
+            padding: 1em;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            border-left: 4px solid #6366f1;
         }
         .spinner {
             border: 4px solid #e5e7eb;
@@ -216,6 +220,24 @@
             margin: 0 0 0.5em 0;
             color: #166534;
         }
+        .transaction-item {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1em;
+            margin: 0.5em 0;
+            border-left: 4px solid #6366f1;
+        }
+        .transaction-number {
+            font-weight: 600;
+            color: #6366f1;
+            font-size: 1.1em;
+            margin-right: 0.5em;
+        }
+        .transaction-item strong {
+            color: #374151;
+            font-weight: 600;
+        }
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -227,15 +249,14 @@
 </head>
 <body>
     <div class="container">
-        <h1>Intelligent Chat Query - Advanced Features</h1>
-        <div class="subtitle">Ask natural language questions with chat history, context management, and session persistence</div>
+        <h1>Intelligent Chat Query</h1>
+        <div class="subtitle">Ask natural language questions about your financial transactions</div>
         
         <div class="main-content">
             <div class="chat-section">
                 <div class="search-row">
                     <input type="text" id="query" placeholder="e.g., Top 10 transactions for marketing costs, Show me office expenditure expenses, What are my top expenses for 2024...">
-                    <button onclick="search()">Ask</button>
-                    <button onclick="searchAdvanced()" class="secondary">Ask (Advanced)</button>
+                    <button onclick="searchAdvanced()">Ask</button>
                 </div>
                 
                 <div class="examples">
@@ -260,18 +281,10 @@
                     </p>
                 </div>
                 
-                <div class="advanced-features">
-                    <h4>🚀 Advanced Features Available:</h4>
-                    <ul>
-                        <li><strong>Chat History Management:</strong> Maintain conversation context across multiple queries</li>
-                        <li><strong>Context Window Management:</strong> Intelligent context summarization for long conversations</li>
-                        <strong>Long Term RAG:</strong> Persistent memory and context retention</li>
-                        <li><strong>Agentic Behaviour:</strong> Proactive suggestions and follow-up questions</li>
-                        <li><strong>Multi Tool Orchestration:</strong> Seamless integration of financial analysis tools</li>
-                    </ul>
-                </div>
-                
                 <div id="results"></div>
+                <div style="text-align: center; margin-top: 1em;">
+                    <button onclick="clearMainChat()">Clear Chat History</button>
+                </div>
             </div>
             
             <div class="sidebar">
@@ -285,7 +298,7 @@
                 <div class="chat-history">
                     <h4>Chat History</h4>
                     <div id="chatHistoryDisplay"></div>
-                    <button onclick="clearChatHistory()" style="width: 100%; margin-top: 1em;" class="secondary">Clear History</button>
+                    <button onclick="clearChatHistory()" style="width: 100%; margin-top: 1em;">Clear History</button>
                 </div>
                 
                 <div class="context-summary">
@@ -313,44 +326,36 @@
         }
         
         function showLoading() {
-            document.getElementById('results').innerHTML = `<div class="loading"><div class="spinner"></div>Processing your query...</div>`;
+            // Add loading indicator below existing chat without clearing it
+            const chatArea = document.getElementById('results');
+            const loadingHtml = `<div class="loading" id="currentLoading"><div class="spinner"></div>Processing your query...</div>`;
+            
+            // If there's existing chat, append loading; otherwise replace
+            if (chatArea.innerHTML && !chatArea.innerHTML.includes('loading')) {
+                chatArea.innerHTML += loadingHtml;
+            } else {
+                chatArea.innerHTML = loadingHtml;
+            }
+            
+            // Scroll to show the loading indicator
+            chatArea.scrollTop = chatArea.scrollHeight;
         }
         
         function showError(msg) {
-            document.getElementById('results').innerHTML = `<div style='color:#dc2626;padding:1em;text-align:center;'>${msg}</div>`;
-        }
-        
-        async function search() {
-            const query = document.getElementById('query').value.trim();
-            if (!query) {
-                showError('Please enter a question to ask.');
-                return;
+            // Remove the loading indicator first
+            const loadingElement = document.getElementById('currentLoading');
+            if (loadingElement) {
+                loadingElement.remove();
             }
-            showLoading();
-            try {
-                const response = await fetch('/api/transactions/intelligent-query-with-tools', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(query)
-                });
-                if (!response.ok) throw new Error('Server error');
-                const result = await response.json();
-                
-                document.getElementById('results').innerHTML = `
-                    <div class="result">
-                        <div><b>Your Query:</b> ${result.query}</div>
-                        <div class="chat-response"><b>Response:</b> ${result.response}</div>
-                        <div style="margin-top: 0.5em; font-size: 0.8em; color: #6b7280;">
-                            Processed at: ${new Date(result.timestamp).toLocaleString()}
-                        </div>
-                    </div>
-                `;
-                
-                // Clear the input for the next query
-                document.getElementById('query').value = '';
-            } catch (e) {
-                showError('An error occurred while processing your query.');
-            }
+            
+            // Add error message to the chat
+            const chatArea = document.getElementById('results');
+            const errorHtml = `<div style='color:#dc2626;padding:1em;text-align:center;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin-bottom:1em;'>❌ ${msg}</div>`;
+            
+            chatArea.innerHTML += errorHtml;
+            
+            // Scroll to show the error
+            chatArea.scrollTop = chatArea.scrollHeight;
         }
         
         async function searchAdvanced() {
@@ -372,23 +377,42 @@
                 if (!response.ok) throw new Error('Server error');
                 const result = await response.json();
                 
-                document.getElementById('results').innerHTML = `
+                // Add the new conversation to the chat area (append instead of replace)
+                const chatArea = document.getElementById('results');
+                const newMessage = `
                     <div class="result">
-                        <div><b>Your Query:</b> ${result.query}</div>
-                        <div><b>Session ID:</b> ${result.sessionId}</div>
-                        <div class="chat-response"><b>Response:</b> ${result.response}</div>
-                        <div style="margin-top: 0.5em; font-size: 0.8em; color: #6b7280;">
-                            Processed at: ${new Date(result.timestamp).toLocaleString()}
+                        <div style="background: #dbeafe; padding: 0.5em; border-radius: 6px; margin-bottom: 0.5em;">
+                            <b>👤 Your Query:</b> ${result.query}
+                        </div>
+                        <div style="background: #dcfce7; padding: 0.5em; border-radius: 6px; margin-bottom: 0.5em;">
+                            <b>🤖 AI Response:</b><br><br>${formatAIResponse(result.response)}
+                        </div>
+                        <div style="font-size: 0.8em; color: #6b7280; text-align: right;">
+                            ${new Date(result.timestamp).toLocaleString()}
                         </div>
                     </div>
                 `;
+                
+                // Remove the loading indicator and add the new message
+                const loadingElement = document.getElementById('currentLoading');
+                if (loadingElement) {
+                    loadingElement.remove();
+                }
+                
+                // Add the new message to the chat
+                chatArea.innerHTML += newMessage;
                 
                 // Clear the input for the next query
                 document.getElementById('query').value = '';
                 
                 // Refresh the sidebar displays
+                console.log('Refreshing chat history and context...');
                 await refreshChatHistory();
                 await refreshContextSummary();
+                console.log('Chat history and context refreshed');
+                
+                // Scroll to the bottom to show the latest message
+                chatArea.scrollTop = chatArea.scrollHeight;
             } catch (e) {
                 showError('An error occurred while processing your query.');
             }
@@ -396,12 +420,15 @@
         
         async function refreshChatHistory() {
             try {
+                console.log(`Fetching chat history for session: ${currentSessionId}`);
                 const response = await fetch(`/api/transactions/chat-history/${currentSessionId}`);
                 if (!response.ok) throw new Error('Failed to fetch chat history');
                 const result = await response.json();
+                console.log('Chat history response:', result);
                 
                 let historyHtml = '';
-                if (result.chatHistory && result.chatHistory.length > 0) {
+                // The API now returns a wrapped response with chatHistory property
+                if (result && result.chatHistory && result.chatHistory.length > 0) {
                     result.chatHistory.forEach(message => {
                         const messageClass = message.role === 'User' ? 'user' : 'assistant';
                         historyHtml += `
@@ -416,20 +443,26 @@
                 }
                 
                 document.getElementById('chatHistoryDisplay').innerHTML = historyHtml;
+                console.log(`Chat history updated with ${result?.chatHistory?.length || 0} messages`);
             } catch (e) {
                 console.error('Error fetching chat history:', e);
+                document.getElementById('chatHistoryDisplay').innerHTML = '<p style="color: #dc2626; font-style: italic;">Error loading chat history</p>';
             }
         }
         
         async function refreshContextSummary() {
             try {
+                console.log(`Fetching context summary for session: ${currentSessionId}`);
                 const response = await fetch(`/api/transactions/context-summary/${currentSessionId}`);
                 if (!response.ok) throw new Error('Failed to fetch context summary');
                 const result = await response.json();
+                console.log('Context summary response:', result);
                 
-                document.getElementById('contextSummaryDisplay').textContent = result.contextSummary;
+                document.getElementById('contextSummaryDisplay').textContent = result.contextSummary || 'No context available';
+                console.log('Context summary updated');
             } catch (e) {
                 console.error('Error fetching context summary:', e);
+                document.getElementById('contextSummaryDisplay').textContent = 'Error loading context';
             }
         }
         
@@ -448,16 +481,31 @@
             }
         }
         
+        function clearMainChat() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        function formatAIResponse(response) {
+            // Convert markdown-like formatting to HTML
+            let formatted = response
+                // Convert **bold** to <strong>bold</strong>
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                // Convert numbered lists (1. item) to HTML lists
+                .replace(/^(\d+)\.\s*(.+)$/gm, '<div class="transaction-item"><span class="transaction-number">$1.</span> $2</div>')
+                // Convert line breaks to <br>
+                .replace(/\n/g, '<br>')
+                // Add spacing between transaction items
+                .replace(/(<\/div>)(<div class="transaction-item">)/g, '$1<br>$2');
+            
+            return formatted;
+        }
+        
         // Initialize the page
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('sessionId').textContent = currentSessionId;
             document.getElementById('query').addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') {
-                    if (e.ctrlKey || e.metaKey) {
-                        searchAdvanced();
-                    } else {
-                        search();
-                    }
+                    searchAdvanced();
                 }
             });
         });

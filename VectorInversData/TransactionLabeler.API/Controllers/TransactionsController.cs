@@ -97,17 +97,21 @@ namespace TransactionLabeler.API.Controllers
         }
 
         [HttpGet("chat-history/{sessionId}")]
-        public async Task<ActionResult<List<object>>> GetChatHistory(string sessionId)
+        public async Task<ActionResult<object>> GetChatHistory(string sessionId)
         {
             try
             {
                 var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
                 var chatHistory = await semanticKernelService.GetChatHistoryAsync(sessionId);
-                return Ok(chatHistory);
+                return Ok(new { 
+                    sessionId = sessionId,
+                    chatHistory = chatHistory,
+                    timestamp = DateTime.UtcNow
+                });
             }
             catch (Exception ex)
             {
-                return BadRequest($"Error retrieving chat history: {ex.Message}");
+                return BadRequest(new { error = $"Error retrieving chat history: {ex.Message}" });
             }
         }
 
