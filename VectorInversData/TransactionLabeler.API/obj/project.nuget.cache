@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "aRD8YdybUtg=",
+  "dgSpecHash": "HnJyQEBXEsU=",
   "success": true,
   "projectFilePath": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\TransactionLabeler.API.csproj",
   "expectedPackageFiles": [
@@ -89,7 +89,8 @@
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.security.cryptography.protecteddata\\9.0.4\\system.security.cryptography.protecteddata.9.0.4.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.text.json\\9.0.7\\system.text.json.9.0.7.nupkg.sha512",
     "C:\\Users\\shivam.goel\\.nuget\\packages\\system.threading.channels\\9.0.7\\system.threading.channels.9.0.7.nupkg.sha512",
-    "C:\\Users\\shivam.goel\\.nuget\\packages\\system.threading.tasks.extensions\\4.5.4\\system.threading.tasks.extensions.4.5.4.nupkg.sha512"
+    "C:\\Users\\shivam.goel\\.nuget\\packages\\system.threading.tasks.extensions\\4.5.4\\system.threading.tasks.extensions.4.5.4.nupkg.sha512",
+    "C:\\Users\\shivam.goel\\.nuget\\packages\\microsoft.net.sdk.compilers.toolset\\9.0.304\\microsoft.net.sdk.compilers.toolset.9.0.304.nupkg.sha512"
   ],
   "logs": []
 }
