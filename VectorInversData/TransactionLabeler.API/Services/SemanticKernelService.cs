@@ -263,13 +263,7 @@ namespace TransactionLabeler.API.Services
                         chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Context: {enhancedContext}"));
                     }
                     
-                    // Add specific follow-up context for common patterns
-                    var followUpContext = BuildFollowUpContext(recentHistory, currentQuery);
-                    if (!string.IsNullOrEmpty(followUpContext))
-                    {
-                        Console.WriteLine($"🔍 Built follow-up context: {followUpContext}");
-                        chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Follow-up Context: {followUpContext}"));
-                    }
+
                 }
             }
 
@@ -283,56 +277,7 @@ namespace TransactionLabeler.API.Services
             return chatHistory;
         }
 
-        private string BuildEnhancedContextFromHistory(IEnumerable<ChatMessageInfo> recentHistory, string currentQuery)
-        {
-            try
-            {
-                var contextBuilder = new List<string>();
-                
-                // Extract customer names mentioned in previous queries
-                var customerNames = recentHistory
-                    .Where(msg => msg.Role == AuthorRole.User)
-                    .SelectMany(msg => ExtractCustomerNames(msg.Content))
-                    .Distinct()
-                    .ToList();
-                
-                if (customerNames.Any())
-                {
-                    contextBuilder.Add($"Previously mentioned customers: {string.Join(", ", customerNames)}");
-                }
 
-                // Extract categories mentioned in previous queries
-                var categories = recentHistory
-                    .Where(msg => msg.Role == AuthorRole.User)
-                    .SelectMany(msg => ExtractCategories(msg.Content))
-                    .Distinct()
-                    .ToList();
-                
-                if (categories.Any())
-                {
-                    contextBuilder.Add($"Previously mentioned categories: {string.Join(", ", categories)}");
-                }
-
-                // Extract time periods mentioned in previous queries
-                var timePeriods = recentHistory
-                    .Where(msg => msg.Role == AuthorRole.User)
-                    .SelectMany(msg => ExtractTimePeriods(msg.Content))
-                    .Distinct()
-                    .ToList();
-                
-                if (timePeriods.Any())
-                {
-                    contextBuilder.Add($"Previously mentioned time periods: {string.Join(", ", timePeriods)}");
-                }
-
-                return string.Join(" | ", contextBuilder);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error building enhanced context: {ex.Message}");
-                return "";
-            }
-        }
 
         private string BuildCondensedContextFromHistory(IEnumerable<ChatMessageInfo> recentHistory, string currentQuery)
         {
@@ -343,15 +288,7 @@ namespace TransactionLabeler.API.Services
                 // Extract customer names from BOTH user queries AND assistant responses
                 var customerNames = new List<string>();
                 
-                // From user queries - look for the most recent customer name
-                var userCustomerNames = recentHistory
-                    .Where(msg => msg.Role == AuthorRole.User)
-                    .SelectMany(msg => ExtractCustomerNames(msg.Content))
-                    .Distinct()
-                    .ToList();
-                customerNames.AddRange(userCustomerNames);
-                
-                // From assistant responses (extract actual customer names returned)
+                // From assistant responses FIRST (extract actual customer names returned) - preserve previous context
                 var assistantCustomerNames = recentHistory
                     .Where(msg => msg.Role == AuthorRole.Assistant)
                     .SelectMany(msg => ExtractCustomerNamesFromResponse(msg.Content))
@@ -359,11 +296,19 @@ namespace TransactionLabeler.API.Services
                     .ToList();
                 customerNames.AddRange(assistantCustomerNames);
                 
+                // From user queries SECOND (add new customer names if any)
+                var userCustomerNames = recentHistory
+                    .Where(msg => msg.Role == AuthorRole.User)
+                    .SelectMany(msg => ExtractCustomerNames(msg.Content))
+                    .Distinct()
+                    .ToList();
+                customerNames.AddRange(userCustomerNames);
+                
                 // Filter out common words and question words
                 var filteredCustomerNames = customerNames
                     .Where(name => !IsCommonWord(name) && !IsQuestionWord(name) && name.Length > 2)
                     .Distinct()
-                    .Take(2)
+                    .Take(3) // Increased to preserve more context
                     .ToList();
                 
                 if (filteredCustomerNames.Any())
@@ -374,13 +319,12 @@ namespace TransactionLabeler.API.Services
                 // Extract categories from BOTH user queries AND assistant responses
                 var categories = new List<string>();
                 
-                // From user queries - look for the most recent category
+                // From user queries - look for themost recent category, but preserve previous ones
                 var userCategories = recentHistory
                     .Where(msg => msg.Role == AuthorRole.User)
                     .SelectMany(msg => ExtractCategories(msg.Content))
                     .Distinct()
                     .ToList();
-                categories.AddRange(userCategories);
                 
                 // From assistant responses (extract actual categories returned)
                 var assistantCategories = recentHistory
@@ -388,13 +332,16 @@ namespace TransactionLabeler.API.Services
                     .SelectMany(msg => ExtractCategoriesFromResponse(msg.Content))
                     .Distinct()
                     .ToList();
-                categories.AddRange(assistantCategories);
+                
+                // Merge categories: keep previous ones and add new ones
+                categories.AddRange(assistantCategories); // Previous context from AI responses
+                categories.AddRange(userCategories);      // New context from user queries
                 
                 // Filter out common words and question words
                 var filteredCategories = categories
                     .Where(cat => !IsCommonWord(cat) && !IsQuestionWord(cat) && cat.Length > 2)
                     .Distinct()
-                    .Take(3)
+                    .Take(5) // Increased to preserve more context
                     .ToList();
                 
                 if (filteredCategories.Any())
@@ -405,15 +352,7 @@ namespace TransactionLabeler.API.Services
                 // Extract time periods from BOTH user queries AND assistant responses
                 var timePeriods = new List<string>();
                 
-                // From user queries
-                var userTimePeriods = recentHistory
-                    .Where(msg => msg.Role == AuthorRole.User)
-                    .SelectMany(msg => ExtractTimePeriods(msg.Content))
-                    .Distinct()
-                    .ToList();
-                timePeriods.AddRange(userTimePeriods);
-                
-                // From assistant responses (extract actual time periods returned)
+                // From assistant responses FIRST (extract actual time periods returned) - preserve previous context
                 var assistantTimePeriods = recentHistory
                     .Where(msg => msg.Role == AuthorRole.Assistant)
                     .SelectMany(msg => ExtractTimePeriodsFromResponse(msg.Content))
@@ -421,9 +360,17 @@ namespace TransactionLabeler.API.Services
                     .ToList();
                 timePeriods.AddRange(assistantTimePeriods);
                 
+                // From user queries SECOND (add new time periods if any)
+                var userTimePeriods = recentHistory
+                    .Where(msg => msg.Role == AuthorRole.User)
+                    .SelectMany(msg => ExtractTimePeriods(msg.Content))
+                    .Distinct()
+                    .ToList();
+                timePeriods.AddRange(userTimePeriods);
+                
                 if (timePeriods.Distinct().Any())
                 {
-                    contextBuilder.Add($"Time: {string.Join(", ", timePeriods.Distinct().Take(2))}");
+                    contextBuilder.Add($"Time: {string.Join(", ", timePeriods.Distinct().Take(3))}"); // Increased to preserve more context
                 }
 
                 return string.Join(" | ", contextBuilder);
@@ -435,79 +382,7 @@ namespace TransactionLabeler.API.Services
             }
         }
 
-        private string BuildFollowUpContext(IEnumerable<ChatMessageInfo> recentHistory, string currentQuery)
-        {
-            try
-            {
-                // Check if this is a follow-up question about transactions
-                if (currentQuery.Contains("transactions", StringComparison.OrdinalIgnoreCase) ||
-                    currentQuery.Contains("show me", StringComparison.OrdinalIgnoreCase) ||
-                    currentQuery.Contains("get", StringComparison.OrdinalIgnoreCase) ||
-                    currentQuery.Contains("find", StringComparison.OrdinalIgnoreCase))
-                {
-                    var contextBuilder = new List<string>();
-                    
-                    // Look for the most recent customer name from previous context
-                    var lastCustomer = recentHistory
-                        .Where(msg => msg.Role == AuthorRole.User)
-                        .SelectMany(msg => ExtractCustomerNames(msg.Content))
-                        .Where(name => !IsCommonWord(name) && !IsQuestionWord(name) && name.Length > 2)
-                        .LastOrDefault();
-                    
-                    if (!string.IsNullOrEmpty(lastCustomer))
-                    {
-                        contextBuilder.Add($"Use customer: {lastCustomer}");
-                    }
-                    
-                    // Look for the most recent category from previous context
-                    var lastCategory = recentHistory
-                        .Where(msg => msg.Role == AuthorRole.User)
-                        .SelectMany(msg => ExtractCategories(msg.Content))
-                        .Where(cat => !IsCommonWord(cat) && !IsQuestionWord(cat) && cat.Length > 2)
-                        .LastOrDefault();
-                    
-                    if (!string.IsNullOrEmpty(lastCategory))
-                    {
-                        contextBuilder.Add($"Use category: {lastCategory}");
-                    }
-                    
-                    // Look for categories from AI responses (like RGS codes)
-                    var responseCategories = recentHistory
-                        .Where(msg => msg.Role == AuthorRole.Assistant)
-                        .SelectMany(msg => ExtractCategoriesFromResponse(msg.Content))
-                        .Where(cat => !IsCommonWord(cat) && !IsQuestionWord(cat) && cat.Length > 2)
-                        .ToList();
-                    
-                    if (responseCategories.Any())
-                    {
-                        contextBuilder.Add($"Available categories from previous response: {string.Join(", ", responseCategories)}");
-                    }
-                    
-                    // Look for time periods
-                    var lastTimePeriod = recentHistory
-                        .Where(msg => msg.Role == AuthorRole.User)
-                        .SelectMany(msg => ExtractTimePeriods(msg.Content))
-                        .LastOrDefault();
-                    
-                    if (!string.IsNullOrEmpty(lastTimePeriod))
-                    {
-                        contextBuilder.Add($"Use time period: {lastTimePeriod}");
-                    }
-                    
-                    if (contextBuilder.Any())
-                    {
-                        return string.Join(" | ", contextBuilder);
-                    }
-                }
-                
-                return "";
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error building follow-up context: {ex.Message}");
-                return "";
-            }
-        }
+
 
         private List<string> ExtractCustomerNames(string content)
         {
@@ -1065,22 +940,22 @@ namespace TransactionLabeler.API.Services
 
                 var businessPrompt = $@"You are a senior business consultant with extensive expertise in various industries and markets. The user is asking about business concepts, typical expenses, or industry analysis.
 
-User Question: {query}
+                    User Question: {query}
 
-IMPORTANT: Provide a comprehensive, detailed response similar to what ChatGPT or Gemini would provide. Include:
+                    IMPORTANT: Provide a comprehensive, detailed response similar to what ChatGPT or Gemini would provide. Include:
 
-1. **Company/Industry Overview**: Detailed background and positioning
-2. **Specific Products/Services**: Name and describe key offerings
-3. **Target Market Analysis**: Who they serve and why
-4. **Business Model Insights**: How they operate and generate revenue
-5. **Market Position**: Their competitive advantages and market share
-6. **Operational Details**: Typical costs, expenses, and business processes
-7. **Industry Standards**: Best practices and benchmarks
-8. **Growth Strategy**: How they expand and evolve
-9. **Regional Specifics**: Local market considerations and adaptations
-10. **Practical Business Advice**: Actionable insights for users
+                    1. **Company/Industry Overview**: Detailed background and positioning
+                    2. **Specific Products/Services**: Name and describe key offerings
+                    3. **Target Market Analysis**: Who they serve and why
+                    4. **Business Model Insights**: How they operate and generate revenue
+                    5. **Market Position**: Their competitive advantages and market share
+                    6. **Operational Details**: Typical costs, expenses, and business processes
+                    7. **Industry Standards**: Best practices and benchmarks
+                    8. **Growth Strategy**: How they expand and evolve
+                    9. **Regional Specifics**: Local market considerations and adaptations
+                    10. **Practical Business Advice**: Actionable insights for users
 
-Be thorough, informative, and engaging. Structure your response with clear sections and provide specific examples when possible. Aim for a response length similar to ChatGPT's detailed company descriptions.";
+                    Be thorough, informative, and engaging. Structure your response with clear sections and provide specific examples when possible. Aim for a response length similar to ChatGPT's detailed company descriptions.";
 
                 var result = await _kernel.InvokePromptAsync(businessPrompt, new KernelArguments(executionSettings));
                 
@@ -1115,32 +990,17 @@ Be thorough, informative, and engaging. Structure your response with clear secti
             {
                 Console.WriteLine($"✅ Question '{question}' identified as follow-up question");
                 
-                // Extract context from recent chat history
-                var context = ExtractContextFromHistory(chatHistory);
-                Console.WriteLine($"🔍 Extracted context - Geography: [{string.Join(", ", context.GeographicContext)}], Topic: [{string.Join(", ", context.TopicContext)}], Entity: [{string.Join(", ", context.EntityContext)}]");
-                
-                // Add geographic context if available
-                if (context.GeographicContext.Any())
+                // Check if this is a financial follow-up question that needs financial context reframing
+                if (IsFinancialFollowUpQuestion(lowerQuestion))
                 {
-                    var geography = context.GeographicContext.First();
-                    reframedQuestion = AddContextToQuestion(reframedQuestion, geography);
-                    Console.WriteLine($"🌍 Added geographic context '{geography}': '{reframedQuestion}'");
+                    Console.WriteLine($"💰 Question identified as financial follow-up, applying financial context reframing");
+                    reframedQuestion = ReframeFinancialQuestion(question, chatHistory);
                 }
-
-                // Add topic context if available
-                if (context.TopicContext.Any())
+                else
                 {
-                    var topic = context.TopicContext.First();
-                    reframedQuestion = AddContextToQuestion(reframedQuestion, topic);
-                    Console.WriteLine($"📚 Added topic context '{topic}': '{reframedQuestion}'");
-                }
-
-                // Add entity context if available
-                if (context.EntityContext.Any())
-                {
-                    var entity = context.EntityContext.First();
-                    reframedQuestion = AddContextToQuestion(reframedQuestion, entity);
-                    Console.WriteLine($"🏢 Added entity context '{entity}': '{reframedQuestion}'");
+                    Console.WriteLine($"💬 Question identified as general follow-up, applying general context reframing");
+                    // For general questions, we could add basic context reframing here if needed
+                    // For now, just return the original question
                 }
             }
             else
@@ -1154,8 +1014,8 @@ Be thorough, informative, and engaging. Structure your response with clear secti
 
         private bool IsFollowUpQuestion(string question)
         {
-            // Questions that typically need context from previous conversation
-            var followUpPatterns = new[]
+            // General knowledge follow-up patterns
+            var generalFollowUpPatterns = new[]
             {
                 "can you recommend",
                 "what about",
@@ -1176,7 +1036,448 @@ Be thorough, informative, and engaging. Structure your response with clear secti
                 "show me"
             };
 
-            return followUpPatterns.Any(pattern => question.Contains(pattern));
+            // Financial follow-up patterns
+            var financialFollowUpPatterns = new[]
+            {
+                "check in",
+                "try",
+                "what about",
+                "how about",
+                "search in",
+                "look in",
+                "find in",
+                "get in",
+                "show in",
+                "list in",
+                "transactions in",
+                "categories in",
+                "expenses in",
+                "costs in",
+                "spending in"
+            };
+
+            // Category change patterns - these indicate the user wants to change categories
+            var categoryChangePatterns = new[]
+            {
+                "for category",
+                "category",
+                "transactions for",
+                "expenses for",
+                "costs for",
+                "spending for",
+                "give transactions for",
+                "show transactions for",
+                "get transactions for",
+                "find transactions for",
+                "search transactions for"
+            };
+
+            // Check if it's a general follow-up
+            if (generalFollowUpPatterns.Any(pattern => question.Contains(pattern)))
+            {
+                return true;
+            }
+
+            // Check if it's a financial follow-up (time period change, customer change, category change)
+            if (financialFollowUpPatterns.Any(pattern => question.Contains(pattern)))
+            {
+                return true;
+            }
+
+            // Check if it's a category change question
+            if (categoryChangePatterns.Any(pattern => question.ToLower().Contains(pattern)))
+            {
+                return true;
+            }
+
+            // Check for standalone time periods, customer names, or categories that suggest follow-up
+            var standalonePatterns = new[]
+            {
+                "2024", "2025", "2023", "2022", "2021", "2020", "2019", "2018", "2017", "2016", "2015",
+                "q1", "q2", "q3", "q4", "quarter 1", "quarter 2", "quarter 3", "quarter 4",
+                "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
+                "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"
+            };
+
+            if (standalonePatterns.Any(pattern => question.ToLower().Contains(pattern)))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool IsFinancialFollowUpQuestion(string question)
+        {
+            // Financial follow-up patterns that suggest context changes
+            var financialPatterns = new[]
+            {
+                "check in", "try", "search in", "look in", "find in", "get in", "show in", "list in",
+                "transactions in", "categories in", "expenses in", "costs in", "spending in",
+                "what about", "how about", "can you try", "can you check", "can you search"
+            };
+
+            // Category change patterns - these indicate the user wants to change categories
+            var categoryChangePatterns = new[]
+            {
+                "for category",
+                "category",
+                "transactions for",
+                "expenses for",
+                "costs for",
+                "spending for",
+                "give transactions for",
+                "show transactions for",
+                "get transactions for",
+                "find transactions for",
+                "search transactions for"
+            };
+
+            // Check for standalone time periods, customer names, or categories
+            var standalonePatterns = new[]
+            {
+                "2024", "2025", "2023", "2022", "2021", "2020", "2019", "2018", "2017", "2016", "2015",
+                "q1", "q2", "q3", "q4", "quarter 1", "quarter 2", "quarter 3", "quarter 4",
+                "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
+                "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"
+            };
+
+            return financialPatterns.Any(pattern => question.Contains(pattern)) ||
+                   categoryChangePatterns.Any(pattern => question.ToLower().Contains(pattern)) ||
+                   standalonePatterns.Any(pattern => question.ToLower().Contains(pattern));
+        }
+
+        private string ReframeFinancialQuestion(string question, List<ChatMessageInfo> chatHistory)
+        {
+            Console.WriteLine($"💰 Reframing financial question: '{question}'");
+            
+            // Extract financial context from recent chat history
+            var financialContext = ExtractFinancialContextFromHistory(chatHistory);
+            Console.WriteLine($"💰 Extracted financial context - Customer: [{string.Join(", ", financialContext.Customers)}], Category: [{string.Join(", ", financialContext.Categories)}], Time: [{string.Join(", ", financialContext.TimePeriods)}], QueryType: [{string.Join(", ", financialContext.QueryTypes)}]");
+            
+            var reframedQuestion = question;
+            
+            // If this is a standalone time period, customer, or category, build a complete question
+            if (IsStandaloneFinancialContext(question))
+            {
+                reframedQuestion = BuildCompleteFinancialQuestion(question, financialContext);
+                Console.WriteLine($"💰 Built complete financial question: '{reframedQuestion}'");
+            }
+            else
+            {
+                // Add missing context to the existing question using pattern matching instead of hardcoded strings
+                if (financialContext.Customers.Any() && !ContainsAnyPattern(question, GetCustomerPatterns()))
+                {
+                    var customer = financialContext.Customers.First();
+                    reframedQuestion = AddFinancialContext(reframedQuestion, customer, "customer");
+                    Console.WriteLine($"💰 Added customer context '{customer}': '{reframedQuestion}'");
+                }
+                
+                if (financialContext.Categories.Any() && !ContainsAnyPattern(question, GetCategoryPatterns()))
+                {
+                    var category = financialContext.Categories.First();
+                    reframedQuestion = AddFinancialContext(reframedQuestion, category, "category");
+                    Console.WriteLine($"💰 Added category context '{category}': '{reframedQuestion}'");
+                }
+                
+                if (financialContext.QueryTypes.Any() && !ContainsAnyPattern(question, GetQueryTypePatterns()))
+                {
+                    var queryType = financialContext.QueryTypes.First();
+                    reframedQuestion = AddFinancialContext(reframedQuestion, queryType, "query type");
+                    Console.WriteLine($"💰 Added query type context '{queryType}': '{reframedQuestion}'");
+                }
+            }
+            
+            return reframedQuestion;
+        }
+
+        // Helper methods for pattern-based detection
+        private bool ContainsAnyPattern(string text, string[] patterns)
+        {
+            var lowerText = text.ToLower();
+            return patterns.Any(pattern => lowerText.Contains(pattern.ToLower()));
+        }
+
+        private string[] GetCustomerPatterns()
+        {
+            // Language-agnostic patterns for customer identification
+            return new[]
+            {
+                "customer", "client", "company", "business", "firm", "organization",
+                "klant", "bedrijf", "onderneming", "organisatie", // Dutch
+                "kunde", "unternehmen", "firma", "organisation", // German
+                "cliente", "empresa", "negocio", "organizacion", // Spanish
+                "client", "entreprise", "affaire", "organisation" // French
+            };
+        }
+
+        private string[] GetCategoryPatterns()
+        {
+            // Language-agnostic patterns for category identification
+            return new[]
+            {
+                "category", "type", "kind", "classification", "group",
+                "categorie", "soort", "type", "groep", // Dutch
+                "kategorie", "art", "typ", "gruppe", // German
+                "categoria", "tipo", "clase", "grupo", // Spanish
+                "catégorie", "type", "classe", "groupe" // French
+            };
+        }
+
+        private string[] GetQueryTypePatterns()
+        {
+            // Language-agnostic patterns for query type identification
+            return new[]
+            {
+                "transaction", "expense", "cost", "spending", "payment", "purchase",
+                "transactie", "uitgave", "kosten", "uitgaven", "betaling", "aankoop", // Dutch
+                "kunde", "unternehmen", "firma", "organisation", // German
+                "cliente", "empresa", "negocio", "organizacion", // Spanish
+                "client", "entreprise", "affaire", "organisation" // French
+            };
+        }
+
+        private FinancialContext ExtractFinancialContextFromHistory(List<ChatMessageInfo> chatHistory)
+        {
+            var context = new FinancialContext();
+            
+            // Look at the last 6 messages (3 user, 3 AI) for context
+            var recentMessages = chatHistory.TakeLast(6).ToList();
+            
+            foreach (var message in recentMessages)
+            {
+                if (message.Role == AuthorRole.User)
+                {
+                    // Extract from user queries
+                    ExtractCustomerNamesFromQuery(message.Content, context);
+                    ExtractCategoriesFromQuery(message.Content, context);
+                    ExtractTimePeriods(message.Content, context);
+                    ExtractQueryTypesFromQuery(message.Content, context);
+                }
+                else if (message.Role == AuthorRole.Assistant)
+                {
+                    // Extract from AI responses
+                    ExtractCustomerNamesFromResponse(message.Content, context);
+                    ExtractCategoriesFromResponse(message.Content, context);
+                    ExtractTimePeriodsFromResponse(message.Content, context);
+                    ExtractQueryTypesFromResponse(message.Content, context);
+                }
+            }
+            
+            return context;
+        }
+
+        private bool IsStandaloneFinancialContext(string question)
+        {
+            // Check if the question is just a standalone element that needs context
+            var lowerQuestion = question.ToLower().Trim();
+            
+            // Standalone time periods
+            var timePatterns = new[] { "2024", "2025", "2023", "q1", "q2", "q3", "q4", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december" };
+            if (timePatterns.Any(pattern => lowerQuestion == pattern || lowerQuestion == $"in {pattern}" || lowerQuestion == $"for {pattern}"))
+            {
+                return true;
+            }
+            
+            // Standalone customer names (if they're just names without context)
+            if (lowerQuestion.Length > 2 && lowerQuestion.Length < 50 && !lowerQuestion.Contains(" ") && !lowerQuestion.Contains("?") && !lowerQuestion.Contains("."))
+            {
+                return true;
+            }
+            
+            return false;
+        }
+
+        private string BuildCompleteFinancialQuestion(string standaloneElement, FinancialContext context)
+        {
+            var question = "can you get";
+            
+            // Add query type context
+            if (context.QueryTypes.Any())
+            {
+                question += $" {context.QueryTypes.First()}";
+            }
+            else
+            {
+                question += " transactions";
+            }
+            
+            // Add category context
+            if (context.Categories.Any())
+            {
+                question += $" related to {context.Categories.First()}";
+            }
+            
+            // Add customer context
+            if (context.Customers.Any())
+            {
+                question += $" for {context.Customers.First()}";
+            }
+            
+            // Add time context
+            if (context.TimePeriods.Any())
+            {
+                question += $" in {context.TimePeriods.First()}";
+            }
+            
+            return question + "?";
+        }
+
+        private string AddFinancialContext(string question, string context, string contextType)
+        {
+            // Don't add context if it's already mentioned
+            if (question.ToLower().Contains(context.ToLower()))
+            {
+                return question;
+            }
+            
+            // Add context in a natural way
+            if (question.EndsWith("?"))
+            {
+                question = question.TrimEnd('?');
+                return $"{question} for {context}?";
+            }
+            else
+            {
+                return $"{question} for {context}";
+            }
+        }
+
+        private void ExtractCustomerNamesFromQuery(string query, FinancialContext context)
+        {
+            // Use existing method but add to context
+            var customers = ExtractCustomerNames(query);
+            foreach (var customer in customers)
+            {
+                if (!context.Customers.Contains(customer))
+                {
+                    context.Customers.Add(customer);
+                }
+            }
+        }
+
+        private void ExtractCategoriesFromQuery(string query, FinancialContext context)
+        {
+            // Use existing method but add to context
+            var categories = ExtractCategories(query);
+            foreach (var category in categories)
+            {
+                if (!context.Categories.Contains(category))
+                {
+                    context.Categories.Add(category);
+                }
+            }
+        }
+
+        private void ExtractTimePeriods(string query, FinancialContext context)
+        {
+            // Use existing method but add to context
+            var timePeriods = ExtractTimePeriods(query);
+            foreach (var timePeriod in timePeriods)
+            {
+                if (!context.TimePeriods.Contains(timePeriod))
+                {
+                    context.TimePeriods.Add(timePeriod);
+                }
+            }
+        }
+
+        private void ExtractQueryTypesFromQuery(string query, FinancialContext context)
+        {
+            var queryTypes = new List<string>();
+            var lowerQuery = query.ToLower();
+            
+            if (lowerQuery.Contains("transaction") || lowerQuery.Contains("transactie"))
+                queryTypes.Add("transactions");
+            if (lowerQuery.Contains("category") || lowerQuery.Contains("categorie"))
+                queryTypes.Add("categories");
+            if (lowerQuery.Contains("expense") || lowerQuery.Contains("uitgave") || lowerQuery.Contains("kosten"))
+                queryTypes.Add("expenses");
+            if (lowerQuery.Contains("cost") || lowerQuery.Contains("kosten"))
+                queryTypes.Add("costs");
+            if (lowerQuery.Contains("spending") || lowerQuery.Contains("uitgaven"))
+                queryTypes.Add("spending");
+            
+            foreach (var queryType in queryTypes)
+            {
+                if (!context.QueryTypes.Contains(queryType))
+                {
+                    context.QueryTypes.Add(queryType);
+                }
+            }
+        }
+
+        private void ExtractCustomerNamesFromResponse(string response, FinancialContext context)
+        {
+            // Extract customer names from AI responses
+            var customers = ExtractCustomerNames(response);
+            foreach (var customer in customers)
+            {
+                if (!context.Customers.Contains(customer))
+                {
+                    context.Customers.Add(customer);
+                }
+            }
+        }
+
+        private void ExtractCategoriesFromResponse(string response, FinancialContext context)
+        {
+            // Extract categories from AI responses
+            var categories = ExtractCategories(response);
+            foreach (var category in categories)
+            {
+                if (!context.Categories.Contains(category))
+                {
+                    context.Categories.Add(category);
+                }
+            }
+        }
+
+        private void ExtractTimePeriodsFromResponse(string response, FinancialContext context)
+        {
+            // Extract time periods from AI responses
+            var timePeriods = ExtractTimePeriods(response);
+            foreach (var timePeriod in timePeriods)
+            {
+                if (!context.TimePeriods.Contains(timePeriod))
+                {
+                    context.TimePeriods.Add(timePeriod);
+                }
+            }
+        }
+
+        private void ExtractQueryTypesFromResponse(string response, FinancialContext context)
+        {
+            // Extract query types from AI responses
+            var queryTypes = new List<string>();
+            var lowerResponse = response.ToLower();
+            
+            if (lowerResponse.Contains("transaction") || lowerResponse.Contains("transactie"))
+                queryTypes.Add("transactions");
+            if (lowerResponse.Contains("category") || lowerResponse.Contains("categorie"))
+                queryTypes.Add("categories");
+            if (lowerResponse.Contains("expense") || lowerResponse.Contains("uitgave") || lowerResponse.Contains("kosten"))
+                queryTypes.Add("expenses");
+            if (lowerResponse.Contains("cost") || lowerResponse.Contains("kosten"))
+                queryTypes.Add("costs");
+            if (lowerResponse.Contains("spending") || lowerResponse.Contains("uitgaven"))
+                queryTypes.Add("spending");
+            
+            foreach (var queryType in queryTypes)
+            {
+                if (!context.QueryTypes.Contains(queryType))
+                {
+                    context.QueryTypes.Add(queryType);
+                }
+            }
+        }
+
+        private class FinancialContext
+        {
+            public List<string> Customers { get; set; } = new();
+            public List<string> Categories { get; set; } = new();
+            public List<string> TimePeriods { get; set; } = new();
+            public List<string> QueryTypes { get; set; } = new();
         }
 
         private string AddContextToQuestion(string question, string context)
@@ -1199,120 +1500,17 @@ Be thorough, informative, and engaging. Structure your response with clear secti
             }
         }
 
-        private class ContextInfo
-        {
-            public List<string> GeographicContext { get; set; } = new();
-            public List<string> TopicContext { get; set; } = new();
-            public List<string> EntityContext { get; set; } = new();
-            public List<string> DomainContext { get; set; } = new();
-            public List<string> TemporalContext { get; set; } = new();
-        }
 
-        private ContextInfo ExtractContextFromHistory(List<ChatMessageInfo> chatHistory)
-        {
-            Console.WriteLine($"🔍 ExtractContextFromHistory called with {chatHistory.Count} messages");
-            var context = new ContextInfo();
-            
-            // Analyze last 3-4 conversation turns for context
-            var recentMessages = chatHistory.TakeLast(6).ToList(); // 3 user questions + 3 AI responses
-            Console.WriteLine($"📊 Analyzing last {recentMessages.Count} messages for context");
-            
-            foreach (var message in recentMessages)
-            {
-                var content = message.Content.ToLower();
-                Console.WriteLine($"🔍 Analyzing message ({message.Role}): '{content.Substring(0, Math.Min(100, content.Length))}...'");
-                
-                // Extract geographic context
-                ExtractGeographicContext(content, context);
-                
-                // Extract topic context
-                ExtractTopicContext(content, context);
-                
-                // Extract entity context
-                ExtractEntityContext(content, context);
-                
-                // Extract domain context
-                ExtractDomainContext(content, context);
-                
-                // Extract temporal context
-                ExtractTemporalContext(content, context);
-            }
 
-            Console.WriteLine($"🔍 Final extracted context - Geography: [{string.Join(", ", context.GeographicContext)}], Topic: [{string.Join(", ", context.TopicContext)}], Entity: [{string.Join(", ", context.EntityContext)}]");
-            return context;
-        }
 
-        private void ExtractGeographicContext(string content, ContextInfo context)
-        {
-            // Countries
-            var countries = new[] { "thailand", "netherlands", "germany", "france", "spain", "italy", "uk", "usa", "canada", "australia", "japan", "china", "india", "brazil" };
-            foreach (var country in countries)
-            {
-                if (content.Contains(country) && !context.GeographicContext.Contains(country))
-                {
-                    context.GeographicContext.Add(country);
-                }
-            }
 
-            // Cities
-            var cities = new[] { "amsterdam", "rotterdam", "the hague", "utrecht", "bangkok", "phuket", "chicago", "new york", "london", "paris", "berlin", "tokyo" };
-            foreach (var city in cities)
-            {
-                if (content.Contains(city) && !context.GeographicContext.Contains(city))
-                {
-                    context.GeographicContext.Add(city);
-                }
-            }
-        }
 
-        private void ExtractTopicContext(string content, ContextInfo context)
-        {
-            var topics = new[] { "news", "weather", "business", "technology", "finance", "health", "education", "sports", "entertainment", "politics", "science", "travel" };
-            foreach (var topic in topics)
-            {
-                if (content.Contains(topic) && !context.TopicContext.Contains(topic))
-                {
-                    context.TopicContext.Add(topic);
-                }
-            }
-        }
 
-        private void ExtractEntityContext(string content, ContextInfo context)
-        {
-            // Companies and organizations
-            var entities = new[] { "visma", "asml", "acorel", "tesla", "apple", "microsoft", "google", "amazon", "netflix", "spotify" };
-            foreach (var entity in entities)
-            {
-                if (content.Contains(entity) && !context.EntityContext.Contains(entity))
-                {
-                    context.EntityContext.Add(entity);
-                }
-            }
-        }
 
-        private void ExtractDomainContext(string content, ContextInfo context)
-        {
-            var domains = new[] { "software", "semiconductor", "transport", "mobility", "energy", "banking", "healthcare", "retail", "manufacturing", "consulting" };
-            foreach (var domain in domains)
-            {
-                if (content.Contains(domain) && !context.DomainContext.Contains(domain))
-                {
-                    context.DomainContext.Add(domain);
-                }
-            }
-        }
 
-        private void ExtractTemporalContext(string content, ContextInfo context)
-        {
-            var temporal = new[] { "today", "yesterday", "tomorrow", "this week", "this month", "this year", "recent", "latest", "current" };
-            foreach (var time in temporal)
-            {
-                if (content.Contains(time) && !context.TemporalContext.Contains(time))
-                {
-                    context.TemporalContext.Add(time);
-                }
-            }
-        }
+
+
+
 
 
     }
