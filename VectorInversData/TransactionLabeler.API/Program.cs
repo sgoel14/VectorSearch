@@ -35,12 +35,12 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
                 maxRetryCount: 5,
                 maxRetryDelay: TimeSpan.FromSeconds(30),
                 errorNumbersToAdd: null);
-        }));
+        }), ServiceLifetime.Singleton);
 
 // Add services
-builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
-builder.Services.AddScoped<ITransactionService, TransactionService>();
-builder.Services.AddScoped<ISemanticKernelService>(provider =>
+builder.Services.AddSingleton<IEmbeddingService, EmbeddingService>();
+builder.Services.AddSingleton<ITransactionService, TransactionService>();
+builder.Services.AddSingleton<ISemanticKernelService>(provider =>
     new SemanticKernelService(
         provider.GetRequiredService<ITransactionService>(),
         provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")!,
@@ -48,7 +48,7 @@ builder.Services.AddScoped<ISemanticKernelService>(provider =>
 
 
 
-builder.Services.AddScoped<FinancialTools>(provider =>
+builder.Services.AddSingleton<FinancialTools>(provider =>
     new FinancialTools(
         provider.GetRequiredService<ITransactionService>(),
         provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")!));

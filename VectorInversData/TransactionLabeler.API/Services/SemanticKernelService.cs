@@ -28,7 +28,7 @@ namespace TransactionLabeler.API.Services
         private readonly IConfiguration _configuration;
 
         // Custom message structure to store both role and content
-        private class ChatMessageInfo
+        public class ChatMessageInfo
         {
             public AuthorRole Role { get; set; }
             public string Content { get; set; }
@@ -63,46 +63,128 @@ namespace TransactionLabeler.API.Services
         {
             try
             {
-                sessionId ??= Guid.NewGuid().ToString();
-                
-                // Initialize or get chat history for this session
-                if (!_chatHistory.TryGetValue(sessionId, out List<ChatMessageInfo>? value))
+                // Generate session ID if not provided
+                if (string.IsNullOrEmpty(sessionId))
                 {
-                    value = new List<ChatMessageInfo>();
-                    _chatHistory[sessionId] = value;
+                    sessionId = $"session_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid().ToString("N")[..8]}";
+                    Console.WriteLine($"🆔 Generated new session ID: {sessionId}");
+                }
+                else
+                {
+                    Console.WriteLine($"🆔 Using existing session ID: {sessionId}");
                 }
 
-                // Add user query to chat history
-                value.Add(new ChatMessageInfo(AuthorRole.User, query));
+                // Get or create chat history for this session
+                Console.WriteLine($"🔍 Checking _chatHistory dictionary:");
+                Console.WriteLine($"   Dictionary contains {_chatHistory.Count} sessions");
+                Console.WriteLine($"   Session keys: [{string.Join(", ", _chatHistory.Keys)}]");
+                Console.WriteLine($"   Looking for session: {sessionId}");
+                Console.WriteLine($"   ContainsKey result: {_chatHistory.ContainsKey(sessionId)}");
+                
+                if (!_chatHistory.ContainsKey(sessionId))
+                {
+                    _chatHistory[sessionId] = new List<ChatMessageInfo>();
+                    Console.WriteLine($"📝 Created new chat history for session: {sessionId}");
+                }
+                else
+                {
+                    Console.WriteLine($"📝 Found existing chat history for session: {sessionId} with {_chatHistory[sessionId].Count} messages");
+                }
+
+                // Log current chat history state
+                var currentHistory = _chatHistory[sessionId];
+                Console.WriteLine($"🔍 Current chat history for session {sessionId}:");
+                foreach (var msg in currentHistory)
+                {
+                    Console.WriteLine($"   {msg.Role}: {msg.Content.Substring(0, Math.Min(100, msg.Content.Length))}...");
+                }
+
+                // Add user message to chat history
+                var userMessage = new ChatMessageInfo(AuthorRole.User, query);
+                currentHistory.Add(userMessage);
+                Console.WriteLine($"✅ Added user message to chat history: '{query}'");
+
+                // Log updated chat history count
+                Console.WriteLine($"📊 Chat history now contains {currentHistory.Count} messages");
 
                 // Let Semantic Kernel intelligently decide which tools to use
                 Console.WriteLine($"🤖 Processing query intelligently: {query}");
-                return await ProcessQueryIntelligentlyAsync(connectionString, query, sessionId, value);
+                var result = await ProcessQueryIntelligentlyAsync(connectionString, query, sessionId, currentHistory);
+                
+                // Add AI response to chat history
+                var aiMessage = new ChatMessageInfo(AuthorRole.Assistant, result);
+                currentHistory.Add(aiMessage);
+                Console.WriteLine($"✅ Added AI response to chat history: '{result.Substring(0, Math.Min(100, result.Length))}...'");
+
+                // Log final chat history state
+                Console.WriteLine($"📊 Final chat history for session {sessionId} contains {currentHistory.Count} messages:");
+                foreach (var msg in currentHistory)
+                {
+                    Console.WriteLine($"   {msg.Role}: {msg.Content.Substring(0, Math.Min(100, msg.Content.Length))}...");
+                }
+
+                return result;
             }
             catch (Exception ex)
             {
-                return $"Error processing query with advanced features: {ex.Message}. Please try a simpler query or use the basic vector search instead.";
+                Console.WriteLine($"❌ Error in ProcessIntelligentQueryWithAdvancedFeaturesAsync: {ex.Message}");
+                throw;
             }
         }
 
         private async Task<string> ProcessQueryIntelligentlyAsync(string connectionString, string query, string sessionId, List<ChatMessageInfo> chatHistory)
         {
+            Console.WriteLine($"🚀 ProcessQueryIntelligentlyAsync called with:");
+            Console.WriteLine($"   Query: '{query}'");
+            Console.WriteLine($"   Session ID: {sessionId}");
+            Console.WriteLine($"   Chat History Count: {chatHistory.Count}");
+            Console.WriteLine($"   Chat History Content:");
+            foreach (var msg in chatHistory)
+            {
+                Console.WriteLine($"     {msg.Role}: {msg.Content.Substring(0, Math.Min(100, msg.Content.Length))}...");
+            }
+            
             try
             {
-                // Check if this is a business concept question that should NOT use financial tools
+                // Apply context-aware question reframing FIRST for general questions
+                var reframedQuestion = ReframeQuestionWithContext(query, chatHistory);
+                if (reframedQuestion != query)
+                {
+                    Console.WriteLine($"🔄 Context Reframing: '{query}' → '{reframedQuestion}'");
+                    query = reframedQuestion; // Use the reframed question
+                    
+                    // CRITICAL: Update the chat history with the reframed question for future context analysis
+                    if (chatHistory.Any())
+                    {
+                        var lastUserMessage = chatHistory.LastOrDefault(m => m.Role == AuthorRole.User);
+                        if (lastUserMessage != null)
+                        {
+                            lastUserMessage.Content = reframedQuestion; // Update with reframed version
+                        }
+                    }
+                }
+                
+                // NOW check if this is a business concept question (after reframing)
                 if (IsBusinessConceptQuestion(query))
                 {
                     return await ProcessBusinessConceptQuestionAsync(query);
                 }
                 
-                // Create financial tools instance
-                var financialTools = new FinancialTools(_transactionService, connectionString);
-                
-                // Import the financial tools into the kernel
-                _kernel.ImportPluginFromObject(financialTools, "FinancialTools");
-                
-                // Debug: Check if plugin was imported
-                Console.WriteLine($"Plugin imported successfully. Available plugins: {_kernel.Plugins.Count}");
+                // Check if FinancialTools plugin is already imported
+                if (!_kernel.Plugins.Any(p => p.Name == "FinancialTools"))
+                {
+                    // Create financial tools instance
+                    var financialTools = new FinancialTools(_transactionService, connectionString);
+                    
+                    // Import the financial tools into the kernel
+                    _kernel.ImportPluginFromObject(financialTools, "FinancialTools");
+                    
+                    Console.WriteLine($"✅ FinancialTools plugin imported. Available plugins: {_kernel.Plugins.Count}");
+                }
+                else
+                {
+                    Console.WriteLine($"✅ FinancialTools plugin already exists. Available plugins: {_kernel.Plugins.Count}");
+                }
 
                 // Build chat history for context window management
                 var chatHistoryForKernel = BuildChatHistoryForKernel(sessionId, query);
@@ -110,8 +192,8 @@ namespace TransactionLabeler.API.Services
                 // Create execution settings with function calling enabled
                 var executionSettings = new AzureOpenAIPromptExecutionSettings
                 {
-                    MaxTokens = 4000,
-                    Temperature = 0.1f,
+                    MaxTokens = 4000, // Back to working value for Azure OpenAI
+                    Temperature = 0.3f, // Keep the improved creativity
                     TopP = 0.9f,
                     PresencePenalty = 0.1f,
                     FrequencyPenalty = 0.1f,
@@ -120,7 +202,7 @@ namespace TransactionLabeler.API.Services
 
                 // Convert chat history to a comprehensive prompt that includes the system prompt
                 var systemPrompt = GetSystemPrompt();
-                var comprehensivePrompt = $"{systemPrompt}\n\n{string.Join("\n", chatHistoryForKernel.Select(msg => $"{msg.Role}: {msg.Content}"))}\n\nUser Query: {query}\n\nIMPORTANT: Only use FinancialTools functions if the user is asking for specific financial data analysis, transactions, or spending calculations. For general knowledge questions (weather, geography, business concepts, etc.), provide helpful responses using your knowledge without calling financial tools.";
+                var comprehensivePrompt = $"{systemPrompt}\n\n{string.Join("\n", chatHistoryForKernel.Select(msg => $"{msg.Role}: {msg.Content}"))}\n\nUser Query: {query}\n\nIMPORTANT: Only use FinancialTools functions if the user is asking for specific financial data analysis, transactions, or spending calculations. For general knowledge questions (weather, geography, business concepts, etc.), provide comprehensive, detailed responses similar to ChatGPT/Gemini quality. Be thorough, informative, and engaging.";
 
                 // Use Semantic Kernel's function calling capabilities with the comprehensive prompt
                 var result = await _kernel.InvokePromptAsync(comprehensivePrompt, new KernelArguments(executionSettings));
@@ -796,7 +878,9 @@ namespace TransactionLabeler.API.Services
 
             RESPONSE FORMAT:
             - For FinancialTools results: Show the actual RGS codes and descriptions in a clear list format
-            - For general knowledge questions: Provide comprehensive, informative responses with examples and helpful details
+            - For general knowledge questions: Provide comprehensive, detailed responses similar to ChatGPT/Gemini quality
+            - Be thorough, informative, and engaging with specific examples and industry insights
+            - Structure responses with clear sections when appropriate
             - For any question: Be helpful, informative, and engaging - you're not limited to financial topics
 
             RGS CODE DISPLAY REQUIREMENTS:
@@ -972,25 +1056,31 @@ namespace TransactionLabeler.API.Services
                 // Use the kernel directly for business concept questions without importing financial tools
                 var executionSettings = new AzureOpenAIPromptExecutionSettings
                 {
-                    MaxTokens = 4000,
-                    Temperature = 0.3f,
+                    MaxTokens = 4000, // Back to working value for Azure OpenAI
+                    Temperature = 0.4f, // Keep the improved creativity
                     TopP = 0.9f,
                     PresencePenalty = 0.1f,
                     FrequencyPenalty = 0.1f
                 };
 
-                var businessPrompt = $@"You are a business consultant with expertise in various industries. The user is asking about business concepts, typical expenses, or industry analysis.
+                var businessPrompt = $@"You are a senior business consultant with extensive expertise in various industries and markets. The user is asking about business concepts, typical expenses, or industry analysis.
 
 User Question: {query}
 
-Please provide a comprehensive, helpful response about:
-- Typical expenses and costs for this type of business
-- Industry standards and best practices
-- Operational considerations
-- Budget planning insights
-- Any relevant business advice
+IMPORTANT: Provide a comprehensive, detailed response similar to what ChatGPT or Gemini would provide. Include:
 
-Be informative and practical. Do not try to access financial data or call any functions - just provide your business knowledge.";
+1. **Company/Industry Overview**: Detailed background and positioning
+2. **Specific Products/Services**: Name and describe key offerings
+3. **Target Market Analysis**: Who they serve and why
+4. **Business Model Insights**: How they operate and generate revenue
+5. **Market Position**: Their competitive advantages and market share
+6. **Operational Details**: Typical costs, expenses, and business processes
+7. **Industry Standards**: Best practices and benchmarks
+8. **Growth Strategy**: How they expand and evolve
+9. **Regional Specifics**: Local market considerations and adaptations
+10. **Practical Business Advice**: Actionable insights for users
+
+Be thorough, informative, and engaging. Structure your response with clear sections and provide specific examples when possible. Aim for a response length similar to ChatGPT's detailed company descriptions.";
 
                 var result = await _kernel.InvokePromptAsync(businessPrompt, new KernelArguments(executionSettings));
                 
@@ -1005,6 +1095,222 @@ Be informative and practical. Do not try to access financial data or call any fu
             {
                 Console.WriteLine($"Error processing business concept question: {ex.Message}");
                 return $"I apologize, but I encountered an error while processing your business question: {ex.Message}";
+            }
+        }
+
+        private string ReframeQuestionWithContext(string question, List<ChatMessageInfo> chatHistory)
+        {
+            Console.WriteLine($"🔄 ReframeQuestionWithContext called with question: '{question}'");
+            Console.WriteLine($"📊 Chat history contains {chatHistory.Count} messages:");
+            foreach (var msg in chatHistory)
+            {
+                Console.WriteLine($"   {msg.Role}: {msg.Content.Substring(0, Math.Min(100, msg.Content.Length))}...");
+            }
+
+            var lowerQuestion = question.ToLower();
+            var reframedQuestion = question;
+
+            // Check if this is a follow-up question that needs context
+            if (IsFollowUpQuestion(lowerQuestion))
+            {
+                Console.WriteLine($"✅ Question '{question}' identified as follow-up question");
+                
+                // Extract context from recent chat history
+                var context = ExtractContextFromHistory(chatHistory);
+                Console.WriteLine($"🔍 Extracted context - Geography: [{string.Join(", ", context.GeographicContext)}], Topic: [{string.Join(", ", context.TopicContext)}], Entity: [{string.Join(", ", context.EntityContext)}]");
+                
+                // Add geographic context if available
+                if (context.GeographicContext.Any())
+                {
+                    var geography = context.GeographicContext.First();
+                    reframedQuestion = AddContextToQuestion(reframedQuestion, geography);
+                    Console.WriteLine($"🌍 Added geographic context '{geography}': '{reframedQuestion}'");
+                }
+
+                // Add topic context if available
+                if (context.TopicContext.Any())
+                {
+                    var topic = context.TopicContext.First();
+                    reframedQuestion = AddContextToQuestion(reframedQuestion, topic);
+                    Console.WriteLine($"📚 Added topic context '{topic}': '{reframedQuestion}'");
+                }
+
+                // Add entity context if available
+                if (context.EntityContext.Any())
+                {
+                    var entity = context.EntityContext.First();
+                    reframedQuestion = AddContextToQuestion(reframedQuestion, entity);
+                    Console.WriteLine($"🏢 Added entity context '{entity}': '{reframedQuestion}'");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"❌ Question '{question}' NOT identified as follow-up question");
+            }
+
+            Console.WriteLine($"🔄 Final reframed question: '{reframedQuestion}'");
+            return reframedQuestion;
+        }
+
+        private bool IsFollowUpQuestion(string question)
+        {
+            // Questions that typically need context from previous conversation
+            var followUpPatterns = new[]
+            {
+                "can you recommend",
+                "what about",
+                "how about",
+                "tell me more",
+                "explain",
+                "describe",
+                "what is",
+                "who is",
+                "where is",
+                "when is",
+                "why is",
+                "how is",
+                "recommend",
+                "suggest",
+                "provide",
+                "give me",
+                "show me"
+            };
+
+            return followUpPatterns.Any(pattern => question.Contains(pattern));
+        }
+
+        private string AddContextToQuestion(string question, string context)
+        {
+            // Don't add context if it's already mentioned in the question
+            if (question.ToLower().Contains(context.ToLower()))
+            {
+                return question;
+            }
+
+            // Add context in a natural way
+            if (question.EndsWith("?"))
+            {
+                question = question.TrimEnd('?');
+                return $"{question} for {context}?";
+            }
+            else
+            {
+                return $"{question} for {context}";
+            }
+        }
+
+        private class ContextInfo
+        {
+            public List<string> GeographicContext { get; set; } = new();
+            public List<string> TopicContext { get; set; } = new();
+            public List<string> EntityContext { get; set; } = new();
+            public List<string> DomainContext { get; set; } = new();
+            public List<string> TemporalContext { get; set; } = new();
+        }
+
+        private ContextInfo ExtractContextFromHistory(List<ChatMessageInfo> chatHistory)
+        {
+            Console.WriteLine($"🔍 ExtractContextFromHistory called with {chatHistory.Count} messages");
+            var context = new ContextInfo();
+            
+            // Analyze last 3-4 conversation turns for context
+            var recentMessages = chatHistory.TakeLast(6).ToList(); // 3 user questions + 3 AI responses
+            Console.WriteLine($"📊 Analyzing last {recentMessages.Count} messages for context");
+            
+            foreach (var message in recentMessages)
+            {
+                var content = message.Content.ToLower();
+                Console.WriteLine($"🔍 Analyzing message ({message.Role}): '{content.Substring(0, Math.Min(100, content.Length))}...'");
+                
+                // Extract geographic context
+                ExtractGeographicContext(content, context);
+                
+                // Extract topic context
+                ExtractTopicContext(content, context);
+                
+                // Extract entity context
+                ExtractEntityContext(content, context);
+                
+                // Extract domain context
+                ExtractDomainContext(content, context);
+                
+                // Extract temporal context
+                ExtractTemporalContext(content, context);
+            }
+
+            Console.WriteLine($"🔍 Final extracted context - Geography: [{string.Join(", ", context.GeographicContext)}], Topic: [{string.Join(", ", context.TopicContext)}], Entity: [{string.Join(", ", context.EntityContext)}]");
+            return context;
+        }
+
+        private void ExtractGeographicContext(string content, ContextInfo context)
+        {
+            // Countries
+            var countries = new[] { "thailand", "netherlands", "germany", "france", "spain", "italy", "uk", "usa", "canada", "australia", "japan", "china", "india", "brazil" };
+            foreach (var country in countries)
+            {
+                if (content.Contains(country) && !context.GeographicContext.Contains(country))
+                {
+                    context.GeographicContext.Add(country);
+                }
+            }
+
+            // Cities
+            var cities = new[] { "amsterdam", "rotterdam", "the hague", "utrecht", "bangkok", "phuket", "chicago", "new york", "london", "paris", "berlin", "tokyo" };
+            foreach (var city in cities)
+            {
+                if (content.Contains(city) && !context.GeographicContext.Contains(city))
+                {
+                    context.GeographicContext.Add(city);
+                }
+            }
+        }
+
+        private void ExtractTopicContext(string content, ContextInfo context)
+        {
+            var topics = new[] { "news", "weather", "business", "technology", "finance", "health", "education", "sports", "entertainment", "politics", "science", "travel" };
+            foreach (var topic in topics)
+            {
+                if (content.Contains(topic) && !context.TopicContext.Contains(topic))
+                {
+                    context.TopicContext.Add(topic);
+                }
+            }
+        }
+
+        private void ExtractEntityContext(string content, ContextInfo context)
+        {
+            // Companies and organizations
+            var entities = new[] { "visma", "asml", "acorel", "tesla", "apple", "microsoft", "google", "amazon", "netflix", "spotify" };
+            foreach (var entity in entities)
+            {
+                if (content.Contains(entity) && !context.EntityContext.Contains(entity))
+                {
+                    context.EntityContext.Add(entity);
+                }
+            }
+        }
+
+        private void ExtractDomainContext(string content, ContextInfo context)
+        {
+            var domains = new[] { "software", "semiconductor", "transport", "mobility", "energy", "banking", "healthcare", "retail", "manufacturing", "consulting" };
+            foreach (var domain in domains)
+            {
+                if (content.Contains(domain) && !context.DomainContext.Contains(domain))
+                {
+                    context.DomainContext.Add(domain);
+                }
+            }
+        }
+
+        private void ExtractTemporalContext(string content, ContextInfo context)
+        {
+            var temporal = new[] { "today", "yesterday", "tomorrow", "this week", "this month", "this year", "recent", "latest", "current" };
+            foreach (var time in temporal)
+            {
+                if (content.Contains(time) && !context.TemporalContext.Contains(time))
+                {
+                    context.TemporalContext.Add(time);
+                }
             }
         }
 
