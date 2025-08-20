@@ -75,17 +75,37 @@ namespace TransactionLabeler.API.Services
                 // Add user query to chat history
                 value.Add(new ChatMessageInfo(AuthorRole.User, query));
 
+                // Let Semantic Kernel intelligently decide which tools to use
+                Console.WriteLine($"🤖 Processing query intelligently: {query}");
+                return await ProcessQueryIntelligentlyAsync(connectionString, query, sessionId, value);
+            }
+            catch (Exception ex)
+            {
+                return $"Error processing query with advanced features: {ex.Message}. Please try a simpler query or use the basic vector search instead.";
+            }
+        }
+
+        private async Task<string> ProcessQueryIntelligentlyAsync(string connectionString, string query, string sessionId, List<ChatMessageInfo> chatHistory)
+        {
+            try
+            {
+                // Check if this is a business concept question that should NOT use financial tools
+                if (IsBusinessConceptQuestion(query))
+                {
+                    return await ProcessBusinessConceptQuestionAsync(query);
+                }
+                
                 // Create financial tools instance
                 var financialTools = new FinancialTools(_transactionService, connectionString);
                 
-                // Import the financial tools directly into the kernel
+                // Import the financial tools into the kernel
                 _kernel.ImportPluginFromObject(financialTools, "FinancialTools");
                 
                 // Debug: Check if plugin was imported
                 Console.WriteLine($"Plugin imported successfully. Available plugins: {_kernel.Plugins.Count}");
 
                 // Build chat history for context window management
-                var chatHistory = BuildChatHistoryForKernel(sessionId, query);
+                var chatHistoryForKernel = BuildChatHistoryForKernel(sessionId, query);
 
                 // Create execution settings with function calling enabled
                 var executionSettings = new AzureOpenAIPromptExecutionSettings
@@ -100,7 +120,7 @@ namespace TransactionLabeler.API.Services
 
                 // Convert chat history to a comprehensive prompt that includes the system prompt
                 var systemPrompt = GetSystemPrompt();
-                var comprehensivePrompt = $"{systemPrompt}\n\n{string.Join("\n", chatHistory.Select(msg => $"{msg.Role}: {msg.Content}"))}\n\nUser Query: {query}\n\nYou MUST use the available FinancialTools functions to get real data. Do not generate fake data.";
+                var comprehensivePrompt = $"{systemPrompt}\n\n{string.Join("\n", chatHistoryForKernel.Select(msg => $"{msg.Role}: {msg.Content}"))}\n\nUser Query: {query}\n\nIMPORTANT: Only use FinancialTools functions if the user is asking for specific financial data analysis, transactions, or spending calculations. For general knowledge questions (weather, geography, business concepts, etc.), provide helpful responses using your knowledge without calling financial tools.";
 
                 // Use Semantic Kernel's function calling capabilities with the comprehensive prompt
                 var result = await _kernel.InvokePromptAsync(comprehensivePrompt, new KernelArguments(executionSettings));
@@ -113,7 +133,7 @@ namespace TransactionLabeler.API.Services
                     var responseContent = result.ToString();
 
                     // Add assistant response to chat history
-                    value.Add(new ChatMessageInfo(AuthorRole.Assistant, responseContent ?? "No response generated."));
+                    chatHistory.Add(new ChatMessageInfo(AuthorRole.Assistant, responseContent ?? "No response generated."));
 
                     // Update context summary for long-term RAG
                     await UpdateContextSummaryAsync(sessionId, query, responseContent ?? "");
@@ -125,9 +145,12 @@ namespace TransactionLabeler.API.Services
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error in intelligent processing: {ex.Message}");
                 return $"Error processing query with advanced features: {ex.Message}. Please try a simpler query or use the basic vector search instead.";
             }
         }
+
+
 
         private List<ChatMessageContent> BuildChatHistoryForKernel(string sessionId, string currentQuery)
         {
@@ -728,7 +751,40 @@ namespace TransactionLabeler.API.Services
 
         private string GetSystemPrompt()
         {
-            return @"You are a financial analysis assistant. Use available tools to analyze transaction data.
+            return @"You are an intelligent AI assistant with expertise in financial analysis AND general knowledge. You can help with both financial questions and general questions about any topic.
+
+            INTELLIGENT TOOL SELECTION:
+            - Use FinancialTools functions when the user asks for specific financial data analysis, transactions, or spending calculations
+            - For general knowledge questions (weather, geography, business concepts, industry information), provide helpful and informative responses using your knowledge
+            - You are a helpful AI assistant that can answer both financial and general questions - don't restrict yourself to only financial topics
+
+            AVAILABLE FINANCIAL TOOLS:
+            - FinancialTools.GetTopExpenseCategoriesFlexible: Returns top expense categories for date ranges
+            - FinancialTools.GetTopTransactionsForCategory: Finds transactions for specific categories using semantic search
+            - FinancialTools.SearchCategories: Searches for relevant categories using vector similarity
+            - FinancialTools.GetCategorySpending: Calculates total spending for specific categories
+
+            WHEN TO USE FINANCIAL TOOLS:
+            - User asks for actual transaction data: 'show me transactions for X', 'get transactions for customer Y'
+            - User asks for spending calculations: 'how much did we spend on X', 'total spending for Y'
+            - User asks for expense analysis: 'top expenses for period Z', 'expense categories for customer A'
+            - User asks for specific financial data from the system
+            - User asks for real spending data: 'how much did Nova Creations spend on car repairs?'
+
+            WHEN NOT TO USE FINANCIAL TOOLS:
+            - General knowledge questions: weather, geography, history, science, cooking, etc.
+            - Business concept explanations: 'what are typical expenses for this industry?', 'most relevant expense categories for X business'
+            - Industry analysis: 'what expenses do companies in this sector typically have?'
+            - Company information: 'what does this company do?', 'main business of X'
+            - Educational questions: 'explain machine learning', 'how does photosynthesis work?'
+            - Business advice: 'what should a company budget for?', 'typical costs for this type of business'
+            - Examples: 'What are typical expenses for an embroidery business?' → General knowledge ✅
+
+            WHEN TO USE GENERAL KNOWLEDGE:
+            - User asks about business concepts: 'what are typical expenses for this industry?'
+            - User asks about general business knowledge: 'what does this company do?', 'main business of X'
+            - User asks for explanations: 'explain expense categories', 'describe business operations'
+            - User asks about industry knowledge: 'what expenses do embroidery businesses have?'
 
             CRITICAL: ALL TRANSACTION RESPONSES MUST INCLUDE RGS CODES AND RGS DESCRIPTIONS
 
@@ -739,11 +795,9 @@ namespace TransactionLabeler.API.Services
             - CRITICAL: For quarter dates like 'Q2 2025', convert to date range: startDate='2025-04-01', endDate='2025-06-30'
 
             RESPONSE FORMAT:
-            - For SearchCategories results: Show the actual RGS codes and descriptions in a clear list format
-            - For GetTopExpenseCategories results: Show the actual category names, RGS codes, and amounts exactly as returned
-            - For GetTopTransactionsForCategory results: Show the actual transaction details including description, amount, date, and RGS code
-            - For GetCategorySpending results: Show the total spending amount, transaction count, date range, customer, and breakdown by RGS codes
-            - If no results found, explain that no transactions match the criteria
+            - For FinancialTools results: Show the actual RGS codes and descriptions in a clear list format
+            - For general knowledge questions: Provide comprehensive, informative responses with examples and helpful details
+            - For any question: Be helpful, informative, and engaging - you're not limited to financial topics
 
             RGS CODE DISPLAY REQUIREMENTS:
             - ALWAYS include RGS codes in transaction responses
@@ -880,6 +934,77 @@ namespace TransactionLabeler.API.Services
             {
                 Console.WriteLine($"Error building intelligent context summary: {ex.Message}");
                 return $"Last query: {query.Substring(0, Math.Min(query.Length, 100))}... | Response: {response.Substring(0, Math.Min(response.Length, 200))}...";
+            }
+        }
+
+        private bool IsBusinessConceptQuestion(string query)
+        {
+            var lowerQuery = query.ToLower();
+            
+            // Keywords that indicate business concept questions (NOT financial data requests)
+            var businessConceptKeywords = new[]
+            {
+                "most relevant expense categories for",
+                "typical expenses for",
+                "what are typical expenses",
+                "what expenses do companies",
+                "what should a company budget for",
+                "typical costs for this type of business",
+                "business description",
+                "kvk",
+                "industry",
+                "sector",
+                "type of business",
+                "business model",
+                "operational costs",
+                "overhead expenses",
+                "business operations"
+            };
+            
+            // Check if the query contains business concept keywords
+            return businessConceptKeywords.Any(keyword => lowerQuery.Contains(keyword));
+        }
+
+        private async Task<string> ProcessBusinessConceptQuestionAsync(string query)
+        {
+            try
+            {
+                // Use the kernel directly for business concept questions without importing financial tools
+                var executionSettings = new AzureOpenAIPromptExecutionSettings
+                {
+                    MaxTokens = 4000,
+                    Temperature = 0.3f,
+                    TopP = 0.9f,
+                    PresencePenalty = 0.1f,
+                    FrequencyPenalty = 0.1f
+                };
+
+                var businessPrompt = $@"You are a business consultant with expertise in various industries. The user is asking about business concepts, typical expenses, or industry analysis.
+
+User Question: {query}
+
+Please provide a comprehensive, helpful response about:
+- Typical expenses and costs for this type of business
+- Industry standards and best practices
+- Operational considerations
+- Budget planning insights
+- Any relevant business advice
+
+Be informative and practical. Do not try to access financial data or call any functions - just provide your business knowledge.";
+
+                var result = await _kernel.InvokePromptAsync(businessPrompt, new KernelArguments(executionSettings));
+                
+                if (result != null)
+                {
+                    return result.ToString();
+                }
+                
+                return "I apologize, but I'm unable to provide a response at the moment. Please try rephrasing your question.";
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing business concept question: {ex.Message}");
+                return $"I apologize, but I encountered an error while processing your business question: {ex.Message}";
             }
         }
 
