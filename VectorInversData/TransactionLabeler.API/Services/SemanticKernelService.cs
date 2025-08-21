@@ -123,12 +123,9 @@ namespace TransactionLabeler.API.Services
         {
             Console.WriteLine($"🚀 ProcessQueryIntelligentlyAsync called with:");
             Console.WriteLine($"   Query: '{query}'");
-            Console.WriteLine($"   Session ID: {sessionId}");
-            Console.WriteLine($"   Chat History Count: {chatHistory.Count}");
-            Console.WriteLine($"   Chat History Content:");
             foreach (var msg in chatHistory)
             {
-                Console.WriteLine($"     {msg.Role}: {msg.Content.Substring(0, Math.Min(100, msg.Content.Length))}...");
+                Console.WriteLine($"     {msg.Role}: {msg.Content[..Math.Min(100, msg.Content.Length)]}...");
             }
             
             try
@@ -141,7 +138,7 @@ namespace TransactionLabeler.API.Services
                     query = reframedQuestion; // Use the reframed question
                     
                     // CRITICAL: Update the chat history with the reframed question for future context analysis
-                    if (chatHistory.Any())
+                    if (chatHistory.Count != 0)
                     {
                         var lastUserMessage = chatHistory.LastOrDefault(m => m.Role == AuthorRole.User);
                         if (lastUserMessage != null)
@@ -149,12 +146,6 @@ namespace TransactionLabeler.API.Services
                             lastUserMessage.Content = reframedQuestion; // Update with reframed version
                         }
                     }
-                }
-                
-                // NOW check if this is a business concept question (after reframing)
-                if (IsBusinessConceptQuestion(query))
-                {
-                    return await ProcessBusinessConceptQuestionAsync(query);
                 }
                 
                 // Check if FinancialTools plugin is already imported
@@ -266,7 +257,7 @@ namespace TransactionLabeler.API.Services
 
 
 
-        private string BuildCondensedContextFromHistory(IEnumerable<ChatMessageInfo> recentHistory, string currentQuery)
+        private static string BuildCondensedContextFromHistory(IEnumerable<ChatMessageInfo> recentHistory, string currentQuery)
         {
             return ContextBuilder.BuildCondensedContextFromHistory(recentHistory, currentQuery);
         }
@@ -275,7 +266,7 @@ namespace TransactionLabeler.API.Services
 
 
 
-        private string GetSystemPrompt()
+        private static string GetSystemPrompt()
         {
             return @"You are an intelligent AI assistant with expertise in financial analysis AND general knowledge. You can help with both financial questions and general questions about any topic.
 
@@ -398,85 +389,6 @@ namespace TransactionLabeler.API.Services
         private async Task UpdateContextSummaryAsync(string sessionId, string query, string response)
         {
             await ContextManager.UpdateContextSummaryAsync(_contextSummaries, sessionId, query, response);
-        }
-
-
-
-        private bool IsBusinessConceptQuestion(string query)
-        {
-            var lowerQuery = query.ToLower();
-            
-            // Keywords that indicate business concept questions (NOT financial data requests)
-            var businessConceptKeywords = new[]
-            {
-                "most relevant expense categories for",
-                "typical expenses for",
-                "what are typical expenses",
-                "what expenses do companies",
-                "what should a company budget for",
-                "typical costs for this type of business",
-                "business description",
-                "kvk",
-                "industry",
-                "sector",
-                "type of business",
-                "business model",
-                "operational costs",
-                "overhead expenses",
-                "business operations"
-            };
-            
-            // Check if the query contains business concept keywords
-            return businessConceptKeywords.Any(keyword => lowerQuery.Contains(keyword));
-        }
-
-        private async Task<string> ProcessBusinessConceptQuestionAsync(string query)
-        {
-            try
-            {
-                // Use the kernel directly for business concept questions without importing financial tools
-                var executionSettings = new AzureOpenAIPromptExecutionSettings
-                {
-                    MaxTokens = 4000, // Back to working value for Azure OpenAI
-                    Temperature = 0.4f, // Keep the improved creativity
-                    TopP = 0.9f,
-                    PresencePenalty = 0.1f,
-                    FrequencyPenalty = 0.1f
-                };
-
-                var businessPrompt = $@"You are a senior business consultant with extensive expertise in various industries and markets. The user is asking about business concepts, typical expenses, or industry analysis.
-
-                    User Question: {query}
-
-                    IMPORTANT: Provide a comprehensive, detailed response similar to what ChatGPT or Gemini would provide. Include:
-
-                    1. **Company/Industry Overview**: Detailed background and positioning
-                    2. **Specific Products/Services**: Name and describe key offerings
-                    3. **Target Market Analysis**: Who they serve and why
-                    4. **Business Model Insights**: How they operate and generate revenue
-                    5. **Market Position**: Their competitive advantages and market share
-                    6. **Operational Details**: Typical costs, expenses, and business processes
-                    7. **Industry Standards**: Best practices and benchmarks
-                    8. **Growth Strategy**: How they expand and evolve
-                    9. **Regional Specifics**: Local market considerations and adaptations
-                    10. **Practical Business Advice**: Actionable insights for users
-
-                    Be thorough, informative, and engaging. Structure your response with clear sections and provide specific examples when possible. Aim for a response length similar to ChatGPT's detailed company descriptions.";
-
-                var result = await _kernel.InvokePromptAsync(businessPrompt, new KernelArguments(executionSettings));
-                
-                if (result != null)
-                {
-                    return result.ToString();
-                }
-                
-                return "I apologize, but I'm unable to provide a response at the moment. Please try rephrasing your question.";
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error processing business concept question: {ex.Message}");
-                return $"I apologize, but I encountered an error while processing your business question: {ex.Message}";
-            }
         }
 
         private async Task<string> ReframeQuestionWithContextAsync(string question, List<ChatMessageInfo> chatHistory)
