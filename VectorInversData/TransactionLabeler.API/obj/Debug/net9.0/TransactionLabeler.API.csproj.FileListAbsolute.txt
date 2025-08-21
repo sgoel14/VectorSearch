@@ -188,5 +188,4 @@ C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\bin\Debug\net9.0\Tra
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\bin\Debug\net9.0\TransactionLabeler.API.pdb
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\TransactionLabeler.API.genruntimeconfig.cache
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\ref\TransactionLabeler.API.dll
-C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\staticwebassets.upToDateCheck.txt
 C:\Git\VectorSearch\VectorInversData\TransactionLabeler.API\obj\Debug\net9.0\compressed\r52njjhc5e-6ozx18f1ti.gz
