@@ -16,42 +16,65 @@
             background: #fff;
             border-radius: 18px;
             box-shadow: 0 8px 32px rgba(60,72,100,0.12);
-            padding: 2.5em 2em 2em 2em;
             max-width: 1200px;
             width: 100%;
             margin: 0 auto;
+            height: calc(100vh - 40px);
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            padding: 1.5em 2em 1em 2em;
+            border-bottom: 1px solid #e5e7eb;
         }
         h1 {
             font-size: 1.7em;
             font-weight: 600;
             color: #2d3a4a;
-            margin-bottom: 0.5em;
+            margin: 0;
             text-align: center;
         }
         .subtitle {
             text-align: center;
             color: #6b7280;
-            margin-bottom: 2em;
+            margin: 0.5em 0 0 0;
             font-size: 0.9em;
         }
         .main-content {
-            display: grid;
-            grid-template-columns: 1fr 300px;
-            gap: 2em;
-        }
-        .chat-section {
             flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
-        .sidebar {
-            background: #f8fafc;
-            border-radius: 12px;
-            padding: 1.5em;
-            height: fit-content;
+        .chat-area {
+            flex: 1;
+            padding: 1.5em 2em;
+            padding-right: 320px;
+            overflow-y: auto;
+            background: linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%);
+        }
+        .input-area {
+            padding: 1.5em 2em;
+            border-top: 1px solid #e5e7eb;
+            background: #fff;
         }
         .search-row {
             display: flex;
             gap: 0.5em;
-            margin-bottom: 1.5em;
+            align-items: flex-end;
+        }
+        .sidebar {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 280px;
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 1.2em;
+            box-shadow: 0 8px 32px rgba(60,72,100,0.12);
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            z-index: 1000;
         }
         #query {
             flex: 1;
@@ -127,56 +150,94 @@
         .message-content {
             white-space: pre-wrap;
         }
-        .context-summary {
-            background: #fef3c7;
-            border-radius: 8px;
-            padding: 1em;
-            margin-bottom: 1em;
-            font-size: 0.9em;
-        }
-        .context-summary h4 {
-            margin: 0 0 0.5em 0;
-            color: #92400e;
-        }
+
         #results {
-            margin-top: 1.5em;
-            max-height: 600px;
-            overflow-y: auto;
-            padding-right: 10px;
+            min-height: 100%;
         }
         .result {
-            background: #f3f4f6;
-            border-radius: 10px;
-            padding: 1.2em 1em 1em 1em;
-            margin-bottom: 1.1em;
-            box-shadow: 0 2px 8px rgba(60,72,100,0.06);
-            transition: box-shadow 0.2s;
-            border-left: 4px solid #6366f1;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border-radius: 16px;
+            padding: 1.5em;
+            margin-bottom: 1.5em;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1), 0 1px 4px rgba(0,0,0,0.05);
+            border: 1px solid rgba(255,255,255,0.8);
+            position: relative;
+            overflow: hidden;
+        }
+        .result::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 50%, #06b6d4 100%);
         }
         .result:hover {
-            box-shadow: 0 6px 18px rgba(99,102,241,0.13);
+            box-shadow: 0 8px 24px rgba(99,102,241,0.15), 0 2px 8px rgba(0,0,0,0.08);
+            transform: translateY(-1px);
+            transition: all 0.3s ease;
         }
-        .result b {
-            color: #6366f1;
+        .user-message {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border-radius: 12px;
+            padding: 1em;
+            margin-bottom: 1em;
+            border-left: 4px solid #3b82f6;
+        }
+        .ai-message {
+            background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+            border-radius: 12px;
+            padding: 1em;
+            margin-bottom: 1em;
+            border-left: 4px solid #16a34a;
+        }
+        .message-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.75em;
             font-weight: 600;
+        }
+        .message-icon {
+            font-size: 1.2em;
+            margin-right: 0.5em;
+        }
+        .message-label {
+            color: #374151;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .message-content {
+            color: #1f2937;
+            line-height: 1.6;
+            font-size: 0.95em;
+        }
+        .message-timestamp {
+            text-align: right;
+            font-size: 0.8em;
+            color: #6b7280;
+            margin-top: 0.5em;
+            font-style: italic;
         }
         .loading {
             display: flex;
             align-items: center;
             justify-content: center;
             margin: 1em 0;
-            padding: 1em;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            border-left: 4px solid #6366f1;
+            padding: 1.5em;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border: 1px solid #bae6fd;
+            border-radius: 12px;
+            border-left: 4px solid #0ea5e9;
+            box-shadow: 0 2px 8px rgba(14,165,233,0.1);
         }
         .spinner {
-            border: 4px solid #e5e7eb;
-            border-top: 4px solid #6366f1;
+            border: 3px solid #e0f2fe;
+            border-top: 3px solid #0ea5e9;
             border-radius: 50%;
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
             animation: spin 1s linear infinite;
             margin-right: 1em;
         }
@@ -194,12 +255,15 @@
             font-family: 'Inter', Arial, sans-serif;
         }
         .examples {
-            background: #f8fafc;
-            border-radius: 8px;
-            padding: 1em;
-            margin-top: 1em;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-radius: 12px;
+            padding: 1.2em;
+            margin-bottom: 1.5em;
+            border-left: 4px solid #0ea5e9;
             font-size: 0.9em;
-            color: #64748b;
+            color: #0f172a;
+            box-shadow: 0 2px 8px rgba(14,165,233,0.08);
+            border: 1px solid rgba(14,165,233,0.1);
         }
         .examples h4 {
             margin: 0 0 0.5em 0;
@@ -221,76 +285,85 @@
             color: #166534;
         }
         .transaction-item {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            border: 1px solid rgba(226,232,240,0.5);
+            border-radius: 10px;
             padding: 1em;
-            margin: 0.5em 0;
+            margin: 0.75em 0;
             border-left: 4px solid #6366f1;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.2s ease;
+        }
+        .transaction-item:hover {
+            background: linear-gradient(135deg, rgba(255,255,255,1) 0%, rgba(248,250,252,0.9) 100%);
+            box-shadow: 0 4px 8px rgba(99,102,241,0.1);
+            transform: translateY(-1px);
         }
         .transaction-number {
             font-weight: 600;
             color: #6366f1;
-            font-size: 1.1em;
+            font-size: 0.95em;
             margin-right: 0.5em;
         }
         .transaction-item strong {
             color: #374151;
             font-weight: 600;
         }
+        @media (max-width: 1024px) {
+            .sidebar { display: none; }
+        }
         @media (max-width: 768px) {
-            .main-content {
-                grid-template-columns: 1fr;
+            .container { 
+                margin: 10px; 
+                height: calc(100vh - 20px); 
+                border-radius: 12px; 
             }
-            .container { padding: 1.2em 0.5em; }
-            h1 { font-size: 1.2em; }
+            .header { padding: 1em; }
+            .chat-area { padding: 1em; }
+            .input-area { padding: 1em; }
+            h1 { font-size: 1.4em; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Intelligent Chat Query</h1>
-        <div class="subtitle">Ask natural language questions about your financial transactions</div>
+        <div class="header">
+            <h1>Visma AI Assistant</h1>
+            <div class="subtitle">Ask natural language questions about your financial transactions</div>
+        </div>
         
         <div class="main-content">
-            <div class="chat-section">
-                <div class="search-row">
-                    <input type="text" id="query" placeholder="e.g., Top 10 transactions for marketing costs, Show me office expenditure expenses, What are my top expenses for 2024...">
-                    <button onclick="searchAdvanced()">Ask</button>
-                </div>
-                
-                <div class="examples">
-                    <p style="margin-top: 1em; font-size: 0.85em; color: #059669;">
-                        <strong>💡 Tip:</strong> You can ask follow-up questions like "Show me the top transactions for marketing costs" or "Show me office expenditure expenses" after getting expense categories.
-                    </p>
-                </div>
-                
+            <div class="chat-area">
                 <div id="results"></div>
-                <div style="text-align: center; margin-top: 1em;">
-                    <button onclick="clearMainChat()">Clear Chat History</button>
-                </div>
             </div>
             
-            <div class="sidebar">
-                <div class="session-info">
-                    <h4>Session Management</h4>
-                    <div>Session ID:</div>
-                    <div class="session-id" id="sessionId"></div>
-                    <button onclick="generateNewSession()" style="width: 100%; margin-top: 0.5em;">New Session</button>
+            <div class="input-area">
+                <div class="search-row">
+                    <input type="text" id="query" placeholder="Ask me anything about your financial transactions...">
+                    <button onclick="searchAdvanced()">Send</button>
                 </div>
-                
-                <div class="chat-history">
-                    <h4>Chat History</h4>
-                    <div id="chatHistoryDisplay"></div>
-                    <button onclick="clearChatHistory()" style="width: 100%; margin-top: 1em;">Clear History</button>
-                </div>
-                
-                <div class="context-summary">
-                    <h4>Context Summary</h4>
-                    <div id="contextSummaryDisplay">No context available</div>
-                    <button onclick="refreshContextSummary()" style="width: 100%; margin-top: 0.5em;">Refresh Context</button>
+                <div style="display: flex; justify-content: space-between; margin-top: 0.5em;">
+                    <button onclick="clearMainChat()" style="background: #f3f4f6; color: #6b7280; font-size: 0.8em; padding: 0.5em 1em;">Clear Chat</button>
+                    <button onclick="generateNewSession()" style="background: #f3f4f6; color: #6b7280; font-size: 0.8em; padding: 0.5em 1em;">New Session</button>
                 </div>
             </div>
+        </div>
+        
+        <div class="sidebar">
+            <div class="session-info">
+                <h4>Session Management</h4>
+                <div>Session ID:</div>
+                <div class="session-id" id="sessionId"></div>
+                <button onclick="generateNewSession()" style="width: 100%; margin-top: 0.5em;">New Session</button>
+            </div>
+            
+            <div class="chat-history">
+                <h4>Chat History</h4>
+                <div id="chatHistoryDisplay"></div>
+                <button onclick="clearChatHistory()" style="width: 100%; margin-top: 1em;">Clear History</button>
+            </div>
+            
+
         </div>
     </div>
     
@@ -305,7 +378,6 @@
             currentSessionId = generateSessionId();
             document.getElementById('sessionId').textContent = currentSessionId;
             document.getElementById('chatHistoryDisplay').innerHTML = '';
-            document.getElementById('contextSummaryDisplay').textContent = 'No context available';
             document.getElementById('results').innerHTML = '';
         }
         
@@ -321,8 +393,9 @@
                 chatArea.innerHTML = loadingHtml;
             }
             
-            // Scroll to show the loading indicator
-            chatArea.scrollTop = chatArea.scrollHeight;
+            // Scroll the chat area container to show the loading indicator
+            const chatContainer = document.querySelector('.chat-area');
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         }
         
         function showError(msg) {
@@ -334,12 +407,13 @@
             
             // Add error message to the chat
             const chatArea = document.getElementById('results');
-            const errorHtml = `<div style='color:#dc2626;padding:1em;text-align:center;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin-bottom:1em;'>❌ ${msg}</div>`;
+            const errorHtml = `<div style='color:#dc2626;padding:1.5em;text-align:center;background:linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);border:1px solid #fecaca;border-radius:12px;margin-bottom:1em;border-left:4px solid #ef4444;box-shadow:0 2px 8px rgba(239,68,68,0.1);'>❌ ${msg}</div>`;
             
             chatArea.innerHTML += errorHtml;
             
             // Scroll to show the error
-            chatArea.scrollTop = chatArea.scrollHeight;
+            const chatContainer = document.querySelector('.chat-area');
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         }
         
         async function searchAdvanced() {
@@ -365,13 +439,21 @@
                 const chatArea = document.getElementById('results');
                 const newMessage = `
                     <div class="result">
-                        <div style="background: #dbeafe; padding: 0.5em; border-radius: 6px; margin-bottom: 0.5em;">
-                            <b>👤 Your Query:</b> ${result.query}
+                        <div class="user-message">
+                            <div class="message-header">
+                                <span class="message-icon">👤</span>
+                                <span class="message-label">Your Query</span>
+                            </div>
+                            <div class="message-content">${result.query}</div>
                         </div>
-                        <div style="background: #dcfce7; padding: 0.5em; border-radius: 6px; margin-bottom: 0.5em;">
-                            <b>🤖 AI Response:</b><br><br>${formatAIResponse(result.response)}
+                        <div class="ai-message">
+                            <div class="message-header">
+                                <span class="message-icon">🤖</span>
+                                <span class="message-label">AI Response</span>
+                            </div>
+                            <div class="message-content">${formatAIResponse(result.response)}</div>
                         </div>
-                        <div style="font-size: 0.8em; color: #6b7280; text-align: right;">
+                        <div class="message-timestamp">
                             ${new Date(result.timestamp).toLocaleString()}
                         </div>
                     </div>
@@ -390,13 +472,13 @@
                 document.getElementById('query').value = '';
                 
                 // Refresh the sidebar displays
-                console.log('Refreshing chat history and context...');
+                console.log('Refreshing chat history...');
                 await refreshChatHistory();
-                await refreshContextSummary();
-                console.log('Chat history and context refreshed');
+                console.log('Chat history refreshed');
                 
                 // Scroll to the bottom to show the latest message
-                chatArea.scrollTop = chatArea.scrollHeight;
+                const chatContainer = document.querySelector('.chat-area');
+                chatContainer.scrollTop = chatContainer.scrollHeight;
             } catch (e) {
                 showError('An error occurred while processing your query.');
             }
@@ -434,21 +516,7 @@
             }
         }
         
-        async function refreshContextSummary() {
-            try {
-                console.log(`Fetching context summary for session: ${currentSessionId}`);
-                const response = await fetch(`/api/transactions/context-summary/${currentSessionId}`);
-                if (!response.ok) throw new Error('Failed to fetch context summary');
-                const result = await response.json();
-                console.log('Context summary response:', result);
-                
-                document.getElementById('contextSummaryDisplay').textContent = result.contextSummary || 'No context available';
-                console.log('Context summary updated');
-            } catch (e) {
-                console.error('Error fetching context summary:', e);
-                document.getElementById('contextSummaryDisplay').textContent = 'Error loading context';
-            }
-        }
+
         
         async function clearChatHistory() {
             try {
@@ -458,7 +526,6 @@
                 if (!response.ok) throw new Error('Failed to clear chat history');
                 
                 document.getElementById('chatHistoryDisplay').innerHTML = '<p style="color: #6b7280; font-style: italic;">Chat history cleared</p>';
-                document.getElementById('contextSummaryDisplay').textContent = 'No context available';
                 document.getElementById('results').innerHTML = '';
             } catch (e) {
                 console.error('Error clearing chat history:', e);

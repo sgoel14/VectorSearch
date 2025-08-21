@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Transaction Analysis Tools</title>
+    <title>AI-Powered Transaction Analysis</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
         body {
@@ -19,13 +19,13 @@
             border-radius: 18px;
             box-shadow: 0 8px 32px rgba(60,72,100,0.12);
             padding: 2.5em 2em 2em 2em;
-            max-width: 600px;
+            max-width: 700px;
             width: 100%;
             margin: 2em auto;
             text-align: center;
         }
         h1 {
-            font-size: 2em;
+            font-size: 2.5em;
             font-weight: 600;
             color: #2d3a4a;
             margin-bottom: 0.5em;
@@ -33,74 +33,125 @@
         .subtitle {
             color: #6b7280;
             margin-bottom: 2em;
-            font-size: 1.1em;
+            font-size: 1.2em;
+            line-height: 1.6;
         }
-        .tools-grid {
+        .hero-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 16px;
+            padding: 2.5em;
+            color: white;
+            margin-bottom: 2em;
+            box-shadow: 0 8px 32px rgba(102,126,234,0.3);
+        }
+        .hero-card h2 {
+            margin: 0 0 0.5em 0;
+            font-size: 1.8em;
+            font-weight: 600;
+        }
+        .hero-card p {
+            margin: 0;
+            font-size: 1.1em;
+            line-height: 1.6;
+            opacity: 0.95;
+        }
+        .cta-button {
+            display: inline-block;
+            background: #fff;
+            color: #667eea;
+            padding: 1em 2em;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.1em;
+            margin-top: 1.5em;
+            transition: all 0.3s;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        }
+        .features {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 1.5em;
             margin-top: 2em;
         }
-        .tool-card {
+        .feature {
             background: #f8fafc;
             border: 2px solid #e2e8f0;
             border-radius: 12px;
             padding: 1.5em;
-            text-decoration: none;
-            color: inherit;
-            transition: all 0.2s;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            text-align: left;
         }
-        .tool-card:hover {
-            border-color: #6366f1;
-            box-shadow: 0 4px 16px rgba(99,102,241,0.12);
-            transform: translateY(-2px);
-        }
-        .tool-card h3 {
+        .feature h3 {
             margin: 0 0 0.5em 0;
             color: #2d3a4a;
             font-size: 1.2em;
+            display: flex;
+            align-items: center;
         }
-        .tool-card p {
+        .feature-icon {
+            margin-right: 0.5em;
+            font-size: 1.2em;
+        }
+        .feature p {
             margin: 0;
             color: #6b7280;
-            font-size: 0.9em;
-            line-height: 1.4;
-        }
-        .icon {
-            font-size: 2em;
-            margin-bottom: 0.5em;
-            color: #6366f1;
+            font-size: 0.95em;
+            line-height: 1.5;
         }
         @media (max-width: 600px) {
-            .tools-grid {
-                grid-template-columns: 1fr;
-            }
             .container {
                 padding: 1.5em 1em;
+                margin: 1em;
+            }
+            .hero-card {
+                padding: 2em 1.5em;
+            }
+            h1 {
+                font-size: 2em;
             }
         }
     </style>
 </head>
 <body>
-            <div class="container">
-        <h1>Transaction Analysis Tools</h1>
-        <div class="subtitle">Choose your preferred way to analyze financial transactions</div>
+    <div class="container">
+        <h1>AI-Powered Transaction Analysis</h1>
+        <div class="subtitle">
+            Transform your financial data into actionable insights with intelligent AI chat
+        </div>
         
-        <div class="tools-grid">
-            <a href="vector-search.html" class="tool-card">
-                <div class="icon">🔍</div>
-                <h3>Vector Search</h3>
-                <p>Semantic search using AI embeddings. Find similar transactions based on description, amount, date, and category.</p>
-            </a>
+        <div class="hero-card">
+            <h2>🚀 Intelligent Financial Assistant</h2>
+            <p>
+                Ask natural language questions about your transactions and get instant, intelligent responses. 
+                Our AI understands context, maintains conversation history, and provides detailed financial analysis.
+            </p>
+            <a href="intelligent-chat.html" class="cta-button">Start Chatting Now →</a>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <h3><span class="feature-icon">💬</span>Natural Language Queries</h3>
+                <p>Ask questions like "How much did we spend on car repairs?" or "Show me top expenses for Q2 2025"</p>
+            </div>
             
-            <a href="intelligent-chat.html" class="tool-card">
-                <div class="icon">💬</div>
-                <h3>Intelligent Chat</h3>
-                <p>Ask natural language questions about your transactions. Get AI-powered insights, category analysis, and expense tracking.</p>
-            </a>
+            <div class="feature">
+                <h3><span class="feature-icon">🧠</span>Context-Aware AI</h3>
+                <p>AI remembers previous conversations and maintains context across multiple queries</p>
+            </div>
+            
+            <div class="feature">
+                <h3><span class="feature-icon">📊</span>Smart Data Analysis</h3>
+                <p>Get detailed insights, category breakdowns, and spending patterns automatically</p>
+            </div>
+            
+            <div class="feature">
+                <h3><span class="feature-icon">🔍</span>RGS Code Integration</h3>
+                <p>Full integration with RGS codes and descriptions for accurate financial categorization</p>
+            </div>
         </div>
     </div>
 </body>
