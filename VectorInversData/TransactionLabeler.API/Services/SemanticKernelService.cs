@@ -133,8 +133,8 @@ namespace TransactionLabeler.API.Services
             
             try
             {
-                // Apply context-aware question reframing FIRST for general questions
-                var reframedQuestion = ReframeQuestionWithContext(query, chatHistory);
+                // Apply AI-powered context-aware question reframing FIRST for general questions
+                var reframedQuestion = await ReframeQuestionWithContextAsync(query, chatHistory);
                 if (reframedQuestion != query)
                 {
                     Console.WriteLine($"🔄 Context Reframing: '{query}' → '{reframedQuestion}'");
@@ -479,9 +479,112 @@ namespace TransactionLabeler.API.Services
             }
         }
 
-        private string ReframeQuestionWithContext(string question, List<ChatMessageInfo> chatHistory)
+        private async Task<string> ReframeQuestionWithContextAsync(string question, List<ChatMessageInfo> chatHistory)
         {
-            return QuestionReframer.ReframeQuestionWithContext(question, chatHistory);
+            try
+            {
+                // If no chat history or only 1 message, no need to reframe
+                if (chatHistory == null || chatHistory.Count <= 1)
+                {
+                    return question;
+                }
+
+                Console.WriteLine($"🔄 AI-powered query rewriting for: '{question}'");
+                Console.WriteLine($"📊 Chat history contains {chatHistory.Count} messages");
+
+                // Build chat history for the AI model
+                var chatHistoryForAI = BuildChatHistoryForQueryRewriting(chatHistory);
+                
+                // Create the system instruction for query rewriting
+                var systemInstruction = @"You are a query rewriting expert. Based on the provided chat history, rephrase the current user question into a complete, standalone question that can be understood without the chat history.
+
+                    IMPORTANT RULES:
+                    - Only output the rewritten question and nothing else
+                    - Preserve the user's intent and specific details
+                    - Add missing context from chat history (customer names, categories, time periods, etc.)
+                    - Make the question self-contained and clear
+                    - Keep the same tone and style as the original question
+                    - If the question is already complete, return it unchanged
+
+                    Example transformations:
+                    - 'check in 2024' → 'check transactions for Nova Creations in 2024'
+                    - 'car repair' → 'show me car repair transactions for Nova Creations'
+                    - 'what about Q2' → 'what are the top expense categories for Nova Creations in Q2 2025'
+                    - 'when asked transactions for categories' -> 'fetch the various categories from previous response and call the transactions iteratively for each category'";
+
+                // Create execution settings for query rewriting
+                var rewriteSettings = new AzureOpenAIPromptExecutionSettings
+                {
+                    MaxTokens = 200, // Short response for query rewriting
+                    Temperature = 0.1f, // Low temperature for consistent rewriting
+                    TopP = 0.9f,
+                    FunctionChoiceBehavior = FunctionChoiceBehavior.None() // No function calling for rewriting
+                };
+
+                // Build the prompt for query rewriting
+                var rewritePrompt = $"{systemInstruction}\n\nChat History:\n{string.Join("\n", chatHistoryForAI)}\n\nCurrent User Question: {question}\n\nRewritten Question:";
+
+                // Use the AI model to rewrite the question
+                var rewriteResult = await _kernel.InvokePromptAsync(rewritePrompt, new KernelArguments(rewriteSettings));
+                
+                if (rewriteResult != null)
+                {
+                    var rewrittenQuestion = rewriteResult.ToString().Trim();
+                    
+                    // Clean up the response (remove quotes, extra text, etc.)
+                    rewrittenQuestion = CleanRewrittenQuestion(rewrittenQuestion);
+                    
+                    if (!string.IsNullOrEmpty(rewrittenQuestion) && rewrittenQuestion != question)
+                    {
+                        Console.WriteLine($"✅ AI Query Rewriting: '{question}' → '{rewrittenQuestion}'");
+                        return rewrittenQuestion;
+                    }
+                }
+
+                Console.WriteLine($"❌ AI query rewriting failed or no change needed, keeping original: '{question}'");
+                return question;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ Error in AI query rewriting: {ex.Message}, keeping original question");
+                return question;
+            }
+        }
+
+        private List<string> BuildChatHistoryForQueryRewriting(List<ChatMessageInfo> chatHistory)
+        {
+            var historyForAI = new List<string>();
+            
+            // Take last 6 messages (3 user, 3 AI) for context
+            var recentHistory = chatHistory.TakeLast(6).ToList();
+            
+            foreach (var message in recentHistory)
+            {
+                var role = message.Role == AuthorRole.User ? "User" : "Assistant";
+                var content = message.Content.Length > 200 ? message.Content.Substring(0, 200) + "..." : message.Content;
+                historyForAI.Add($"{role}: {content}");
+            }
+            
+            return historyForAI;
+        }
+
+        private string CleanRewrittenQuestion(string rewrittenQuestion)
+        {
+            // Remove quotes if present
+            rewrittenQuestion = rewrittenQuestion.Trim('"', '\'', '`');
+            
+            // Remove common AI prefixes
+            var prefixesToRemove = new[] { "rewritten question:", "question:", "answer:", "rewritten:", "result:" };
+            foreach (var prefix in prefixesToRemove)
+            {
+                if (rewrittenQuestion.ToLower().StartsWith(prefix.ToLower()))
+                {
+                    rewrittenQuestion = rewrittenQuestion.Substring(prefix.Length).Trim();
+                    break;
+                }
+            }
+            
+            return rewrittenQuestion;
         }
 
 

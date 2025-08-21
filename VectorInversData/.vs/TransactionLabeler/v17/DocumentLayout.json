@@ -7,12 +7,12 @@
       "RelativeMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|solutionrelative:transactionlabeler.api\\services\\semantickernelservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|c:\\git\\vectorsearch\\vectorinversdata\\transactionlabeler.api\\services\\transactionservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|solutionrelative:transactionlabeler.api\\services\\transactionservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|c:\\git\\vectorsearch\\vectorinversdata\\transactionlabeler.api\\services\\financialtools.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|solutionrelative:transactionlabeler.api\\services\\financialtools.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|c:\\git\\vectorsearch\\vectorinversdata\\transactionlabeler.api\\services\\transactionservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2A4B92D0-1FDC-4950-B016-A97291D5881D}|TransactionLabeler.API\\TransactionLabeler.API.csproj|solutionrelative:transactionlabeler.api\\services\\transactionservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -46,13 +46,13 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 1,
               "Title": "FinancialTools.cs",
               "DocumentMoniker": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Services\\FinancialTools.cs",
               "RelativeDocumentMoniker": "TransactionLabeler.API\\Services\\FinancialTools.cs",
               "ToolTip": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Services\\FinancialTools.cs",
               "RelativeToolTip": "TransactionLabeler.API\\Services\\FinancialTools.cs",
-              "ViewState": "AgIAAD0AAAAAAAAAAAAQwFYAAAAMAAAAAAAAAA==",
+              "ViewState": "AgIAADoAAAAAAAAAAAAQwE0AAAAjAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-08-19T12:33:11.218Z",
               "EditorCaption": ""
@@ -65,20 +65,20 @@
               "RelativeDocumentMoniker": "TransactionLabeler.API\\Services\\SemanticKernelService.cs",
               "ToolTip": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Services\\SemanticKernelService.cs",
               "RelativeToolTip": "TransactionLabeler.API\\Services\\SemanticKernelService.cs",
-              "ViewState": "AgIAABgAAAAAAAAAAAAowEQAAAAQAAAAAAAAAA==",
+              "ViewState": "AgIAAOoBAAAAAAAAAAArwAECAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-08-19T09:50:41.477Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 2,
               "Title": "TransactionService.cs",
               "DocumentMoniker": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Services\\TransactionService.cs",
               "RelativeDocumentMoniker": "TransactionLabeler.API\\Services\\TransactionService.cs",
               "ToolTip": "C:\\Git\\VectorSearch\\VectorInversData\\TransactionLabeler.API\\Services\\TransactionService.cs",
               "RelativeToolTip": "TransactionLabeler.API\\Services\\TransactionService.cs",
-              "ViewState": "AgIAALUBAAAAAAAAAAAQwL4BAAAbAAAAAAAAAA==",
+              "ViewState": "AgIAAOwAAAAAAAAAAAArwBkBAAAMAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-07-03T08:21:46.262Z",
               "EditorCaption": ""
