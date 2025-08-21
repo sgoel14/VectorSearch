@@ -3,239 +3,207 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
 using TransactionLabeler.API.Models;
 using TransactionLabeler.API.Services;
 
 namespace TransactionLabeler.API.Services
 {
     /// <summary>
-    /// Helper class for building and managing context from chat history
+    /// Helper class for building and managing context from chat history using AI-powered extraction
     /// </summary>
     public static class ContextBuilder
     {
+        private static Kernel? _kernel;
+
         /// <summary>
-        /// Builds condensed context from recent chat history by extracting key parameters
+        /// Initialize the kernel for AI-powered context extraction
         /// </summary>
-        public static string BuildCondensedContextFromHistory(IEnumerable<ChatMessageInfo> recentHistory, string currentQuery)
+        public static void InitializeKernel(Kernel kernel)
+        {
+            _kernel = kernel;
+        }
+
+        /// <summary>
+        /// Builds condensed context from recent chat history using AI-powered extraction
+        /// </summary>
+        public static async Task<string> BuildCondensedContextFromHistoryAsync(IEnumerable<ChatMessageInfo> recentHistory, string currentQuery)
+        {
+            try
+            {
+                if (_kernel == null)
+                {
+                    Console.WriteLine("⚠️ Kernel not initialized, falling back to basic context extraction");
+                    return BuildBasicContextFromHistory(recentHistory, currentQuery);
+                }
+
+                if (!recentHistory.Any())
+                {
+                    return "";
+                }
+
+                Console.WriteLine($"🤖 AI-powered context extraction for query: '{currentQuery}'");
+                Console.WriteLine($"📊 Processing {recentHistory.Count()} messages from chat history");
+
+                // Build chat history for AI analysis
+                var chatHistoryForAI = BuildChatHistoryForContextExtraction(recentHistory);
+                
+                // Create the system instruction for context extraction
+                var systemInstruction = @"You are a context extraction expert. Analyze the provided chat history and extract the most relevant context information.
+
+                    IMPORTANT RULES:
+                    - Extract ONLY the following information in this exact format:
+                      * Customer names (business names, company names, client names)
+                      * Categories (expense categories, transaction types, business areas)
+                      * Time periods (years, quarters, months, specific dates)
+                      * Query types (what the user is asking about)
+
+                    - Format your response EXACTLY like this example:
+                      Customer: Company Name 1, Company Name 2
+                      Categories: Category 1, Category 2, Category 3
+                      Time: 2025, Q2 2025, January 2025
+                      Query Type: Transaction Analysis
+
+                    - Rules for extraction:
+                      * Customer names: Extract actual business/company names, not generic words
+                      * Categories: Extract specific expense categories or transaction types
+                      * Time periods: Extract years, quarters, months, or specific dates
+                      * Query Type: Identify if this is about transactions, categories, expenses, or general questions
+
+                    - Filter out:
+                      * Common words (the, and, or, for, etc.)
+                      * Question words (what, when, where, etc.)
+                      * Generic terms that don't add context
+
+                    - If no relevant information is found for a category, omit that line entirely
+                    - Keep the format clean and consistent
+                    - Only output the extracted context, nothing else";
+
+                // Create execution settings for context extraction
+                var extractionSettings = new AzureOpenAIPromptExecutionSettings
+                {
+                    MaxTokens = 300, // Short response for context extraction
+                    Temperature = 0.1f, // Low temperature for consistent extraction
+                    TopP = 0.9f,
+                    FunctionChoiceBehavior = FunctionChoiceBehavior.None() // No function calling for extraction
+                };
+
+                // Build the prompt for context extraction
+                var extractionPrompt = $"{systemInstruction}\n\nChat History:\n{string.Join("\n", chatHistoryForAI)}\n\nCurrent Query: {currentQuery}\n\nExtracted Context:";
+
+                // Use the AI model to extract context
+                var extractionResult = await _kernel.InvokePromptAsync(extractionPrompt, new KernelArguments(extractionSettings));
+                
+                if (extractionResult != null)
+                {
+                    var extractedContext = extractionResult.ToString().Trim();
+                    
+                    // Clean up the response
+                    extractedContext = CleanExtractedContext(extractedContext);
+                    
+                    if (!string.IsNullOrEmpty(extractedContext))
+                    {
+                        Console.WriteLine($"✅ AI Context Extraction Result: {extractedContext}");
+                        return extractedContext;
+                    }
+                }
+
+                Console.WriteLine($"❌ AI context extraction failed, falling back to basic extraction");
+                return BuildBasicContextFromHistory(recentHistory, currentQuery);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ Error in AI context extraction: {ex.Message}, falling back to basic extraction");
+                return BuildBasicContextFromHistory(recentHistory, currentQuery);
+            }
+        }
+
+        /// <summary>
+        /// Fallback method for basic context extraction when AI is not available
+        /// </summary>
+        private static string BuildBasicContextFromHistory(IEnumerable<ChatMessageInfo> recentHistory, string currentQuery)
         {
             try
             {
                 var contextBuilder = new List<string>();
                 
-                // Extract customer names from BOTH user queries AND assistant responses
-                var customerNames = new List<string>();
+                // Simple extraction without hardcoded patterns
+                var allContent = string.Join(" ", recentHistory.Select(msg => msg.Content));
                 
-                // From assistant responses FIRST (extract actual customer names returned) - preserve previous context
-                var assistantCustomerNames = recentHistory
-                    .Where(msg => msg.Role == AuthorRole.Assistant)
-                    .SelectMany(msg => ContextExtractor.ExtractCustomerNamesFromResponse(msg.Content))
-                    .Distinct()
-                    .ToList();
-                customerNames.AddRange(assistantCustomerNames);
-                
-                // From user queries SECOND (add new customer names if any)
-                var userCustomerNames = recentHistory
-                    .Where(msg => msg.Role == AuthorRole.User)
-                    .SelectMany(msg => ContextExtractor.ExtractCustomerNames(msg.Content))
-                    .Distinct()
-                    .ToList();
-                customerNames.AddRange(userCustomerNames);
-                
-                // Filter out common words and question words
-                var filteredCustomerNames = customerNames
-                    .Where(name => !name.IsCommonWord() && !name.IsQuestionWord() && name.Length > 2)
-                    .Distinct()
-                    .Take(3) // Increased to preserve more context
-                    .ToList();
-                
-                if (filteredCustomerNames.Any())
+                // Extract years (basic pattern)
+                var yearMatches = System.Text.RegularExpressions.Regex.Matches(allContent, @"\b20[12]\d\b");
+                var years = yearMatches.Select(m => m.Value).Distinct().Take(3).ToList();
+                if (years.Any())
                 {
-                    contextBuilder.Add($"Customer: {string.Join(", ", filteredCustomerNames)}");
+                    contextBuilder.Add($"Time: {string.Join(", ", years)}");
                 }
-
-                // Extract categories from BOTH user queries AND assistant responses
-                var categories = new List<string>();
                 
-                // From user queries - look for the most recent category, but preserve previous ones
-                var userCategories = recentHistory
-                    .Where(msg => msg.Role == AuthorRole.User)
-                    .SelectMany(msg => ContextExtractor.ExtractCategories(msg.Content))
-                    .Distinct()
-                    .ToList();
-                
-                // From assistant responses (extract actual categories returned)
-                var assistantCategories = recentHistory
-                    .Where(msg => msg.Role == AuthorRole.Assistant)
-                    .SelectMany(msg => ContextExtractor.ExtractCategoriesFromResponse(msg.Content))
-                    .Distinct()
-                    .ToList();
-                
-                // Merge categories: keep previous ones and add new ones
-                categories.AddRange(assistantCategories); // Previous context from AI responses
-                categories.AddRange(userCategories);      // New context from user queries
-                
-                // Filter out common words and question words
-                var filteredCategories = categories
-                    .Where(cat => !cat.IsCommonWord() && !cat.IsQuestionWord() && cat.Length > 2)
-                    .ToList();
-                
-                if (filteredCategories.Any())
+                // Extract quarters (basic pattern)
+                var quarterMatches = System.Text.RegularExpressions.Regex.Matches(allContent, @"\bQ[1-4]\s*20[12]\d\b");
+                var quarters = quarterMatches.Select(m => m.Value).Distinct().Take(3).ToList();
+                if (quarters.Any())
                 {
-                    contextBuilder.Add($"Categories: {string.Join(", ", filteredCategories)}");
+                    contextBuilder.Add($"Quarters: {string.Join(", ", quarters)}");
                 }
-
-                // Extract time periods from BOTH user queries AND assistant responses
-                var timePeriods = new List<string>();
                 
-                // From assistant responses FIRST (extract actual time periods returned) - preserve previous context
-                var assistantTimePeriods = recentHistory
-                    .Where(msg => msg.Role == AuthorRole.Assistant)
-                    .SelectMany(msg => ContextExtractor.ExtractTimePeriodsFromResponse(msg.Content))
-                    .Distinct()
-                    .ToList();
-                timePeriods.AddRange(assistantTimePeriods);
-                
-                // From user queries SECOND (add new time periods if any)
-                var userTimePeriods = recentHistory
-                    .Where(msg => msg.Role == AuthorRole.User)
-                    .SelectMany(msg => ContextExtractor.ExtractTimePeriods(msg.Content))
-                    .Distinct()
-                    .ToList();
-                timePeriods.AddRange(userTimePeriods);
-                
-                if (timePeriods.Distinct().Any())
-                {
-                    contextBuilder.Add($"Time: {string.Join(", ", timePeriods.Distinct().Take(3))}"); // Increased to preserve more context
-                }
-
                 return string.Join(" | ", contextBuilder);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error building condensed context: {ex.Message}");
+                Console.WriteLine($"Error in basic context extraction: {ex.Message}");
                 return "";
             }
         }
 
         /// <summary>
-        /// Builds chat history for the kernel with context management
+        /// Builds chat history for AI context extraction
         /// </summary>
-        public static List<ChatMessageContent> BuildChatHistoryForKernel(string sessionId, string currentQuery)
+        private static List<string> BuildChatHistoryForContextExtraction(IEnumerable<ChatMessageInfo> recentHistory)
         {
-            var chatHistory = new List<ChatMessageContent>();
+            var historyForAI = new List<string>();
             
-            // Add the current query as a user message
-            chatHistory.Add(new ChatMessageContent(AuthorRole.User, currentQuery));
+            // Take last 8 messages (4 user, 4 AI) for context
+            var recentHistoryList = recentHistory.TakeLast(8).ToList();
             
-            // Add condensed context from recent history if available
-            // This would need to be implemented based on your chat history storage
-            // For now, we'll return the basic structure
-            
-            return chatHistory;
-        }
-
-        /// <summary>
-        /// Builds intelligent context summary from query and response
-        /// </summary>
-        public static string BuildIntelligentContextSummary(string query, string response)
-        {
-            try
+            foreach (var message in recentHistoryList)
             {
-                var summaryBuilder = new List<string>();
-                
-                // Extract key information from the query
-                var queryCustomers = ContextExtractor.ExtractCustomerNames(query);
-                var queryCategories = ContextExtractor.ExtractCategories(query);
-                var queryTimePeriods = ContextExtractor.ExtractTimePeriods(query);
-                
-                // Extract key information from the response
-                var responseCustomers = ContextExtractor.ExtractCustomerNamesFromResponse(response);
-                var responseCategories = ContextExtractor.ExtractCategoriesFromResponse(response);
-                var responseTimePeriods = ContextExtractor.ExtractTimePeriodsFromResponse(response);
-                
-                // Combine and prioritize information
-                var allCustomers = queryCustomers.Concat(responseCustomers).Distinct().Take(2).ToList();
-                var allCategories = queryCategories.Concat(responseCategories).Distinct().Take(3).ToList();
-                var allTimePeriods = queryTimePeriods.Concat(responseTimePeriods).Distinct().Take(2).ToList();
-                
-                if (allCustomers.Any())
-                {
-                    summaryBuilder.Add($"Customers: {string.Join(", ", allCustomers)}");
-                }
-                
-                if (allCategories.Any())
-                {
-                    summaryBuilder.Add($"Categories: {string.Join(", ", allCategories)}");
-                }
-                
-                if (allTimePeriods.Any())
-                {
-                    summaryBuilder.Add($"Time Periods: {string.Join(", ", allTimePeriods)}");
-                }
-                
-                // Add query type if identifiable
-                if (query.ToLower().Contains("transaction") || response.ToLower().Contains("transaction"))
-                {
-                    summaryBuilder.Add("Query Type: Transaction Analysis");
-                }
-                else if (query.ToLower().Contains("category") || response.ToLower().Contains("category"))
-                {
-                    summaryBuilder.Add("Query Type: Category Analysis");
-                }
-                else if (query.ToLower().Contains("expense") || response.ToLower().Contains("expense"))
-                {
-                    summaryBuilder.Add("Query Type: Expense Analysis");
-                }
-                
-                return string.Join(" | ", summaryBuilder);
+                var role = message.Role == AuthorRole.User ? "User" : "Assistant";
+                var content = message.Content.Length > 300 ? message.Content.Substring(0, 300) + "..." : message.Content;
+                historyForAI.Add($"{role}: {content}");
             }
-            catch (Exception ex)
+            
+            return historyForAI;
+        }
+
+        /// <summary>
+        /// Cleans the extracted context from AI response
+        /// </summary>
+        private static string CleanExtractedContext(string extractedContext)
+        {
+            // Remove quotes if present
+            extractedContext = extractedContext.Trim('"', '\'', '`');
+            
+            // Remove common AI prefixes
+            var prefixesToRemove = new[] { "extracted context:", "context:", "result:", "analysis:" };
+            foreach (var prefix in prefixesToRemove)
             {
-                Console.WriteLine($"Error building intelligent context summary: {ex.Message}");
-                return "";
+                if (extractedContext.StartsWith(prefix, StringComparison.CurrentCultureIgnoreCase))
+                {
+                    extractedContext = extractedContext.Substring(prefix.Length).Trim();
+                    break;
+                }
             }
-        }
-    }
-
-    /// <summary>
-    /// Extension methods for common word and question word checking
-    /// </summary>
-    public static class ContextExtractorExtensions
-    {
-        /// <summary>
-        /// Checks if a word is a common word that should be filtered out
-        /// </summary>
-        public static bool IsCommonWord(this string word)
-        {
-            var commonWords = new[]
-            {
-                "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by",
-                "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did",
-                "will", "would", "could", "should", "may", "might", "can", "must", "shall",
-                "this", "that", "these", "those", "i", "you", "he", "she", "it", "we", "they",
-                "me", "him", "her", "us", "them", "my", "your", "his", "her", "its", "our", "their",
-                "mine", "yours", "hers", "ours", "theirs", "myself", "yourself", "himself", "herself",
-                "itself", "ourselves", "yourselves", "themselves",
-                "what", "when", "where", "who", "whom", "which", "whose", "why", "how",
-                "all", "any", "both", "each", "few", "more", "most", "other", "some", "such",
-                "no", "nor", "not", "only", "own", "same", "so", "than", "too", "very"
-            };
             
-            return commonWords.Contains(word.ToLower());
+            // Ensure proper line breaks
+            extractedContext = extractedContext.Replace("\\n", "\n");
+            
+            return extractedContext;
         }
 
-        /// <summary>
-        /// Checks if a word is a question word that should be filtered out
-        /// </summary>
-        public static bool IsQuestionWord(this string word)
-        {
-            var questionWords = new[]
-            {
-                "what", "when", "where", "who", "whom", "which", "whose", "why", "how",
-                "can", "could", "would", "should", "will", "may", "might", "must", "shall"
-            };
-            
-            return questionWords.Contains(word.ToLower());
-        }
+
+
+
+
+
     }
 }

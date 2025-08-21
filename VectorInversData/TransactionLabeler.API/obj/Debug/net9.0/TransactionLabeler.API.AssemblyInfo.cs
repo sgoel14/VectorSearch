@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("TransactionLabeler.API")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c30b10d5f84f5772f2dcfdd4bf42e0e2d2f07911")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+630e4e5ca98abe3ba367e35fed494d436dbc3954")]
 [assembly: System.Reflection.AssemblyProductAttribute("TransactionLabeler.API")]
 [assembly: System.Reflection.AssemblyTitleAttribute("TransactionLabeler.API")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

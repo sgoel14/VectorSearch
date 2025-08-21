@@ -44,6 +44,10 @@ namespace TransactionLabeler.API.Services
                     _configuration["AzureOpenAI:Endpoint"]!,
                     _configuration["AzureOpenAI:Key"]!)
                 .Build();
+
+            // Initialize the kernel in helper classes for AI-powered context extraction
+            ContextBuilder.InitializeKernel(_kernel);
+            ContextManager.InitializeKernel(_kernel);
         }
 
         public async Task<string> ProcessIntelligentQueryWithAdvancedFeaturesAsync(string connectionString, string query, string? sessionId = null)
@@ -134,7 +138,7 @@ namespace TransactionLabeler.API.Services
                 var reframedQuestion = await ReframeQuestionWithContextAsync(query, chatHistory);
                 if (reframedQuestion != query)
                 {
-                    Console.WriteLine($"🔄 Context Reframing: '{query}' → '{reframedQuestion}'");
+                    Console.WriteLine($"�� Context Reframing: '{query}' → '{reframedQuestion}'");
                     query = reframedQuestion; // Use the reframed question
                     
                     // CRITICAL: Update the chat history with the reframed question for future context analysis
@@ -165,7 +169,7 @@ namespace TransactionLabeler.API.Services
                 }
 
                 // Build chat history for context window management
-                var chatHistoryForKernel = BuildChatHistoryForKernel(sessionId, query);
+                var chatHistoryForKernel = await BuildChatHistoryForKernelAsync(sessionId, query);
 
                 // Create execution settings with function calling enabled
                 var executionSettings = new AzureOpenAIPromptExecutionSettings
@@ -212,7 +216,7 @@ namespace TransactionLabeler.API.Services
 
 
 
-        private List<ChatMessageContent> BuildChatHistoryForKernel(string sessionId, string currentQuery)
+        private async Task<List<ChatMessageContent>> BuildChatHistoryForKernelAsync(string sessionId, string currentQuery)
         {
             var chatHistory = new List<ChatMessageContent>
             {
@@ -234,7 +238,7 @@ namespace TransactionLabeler.API.Services
                 // Add condensed enhanced context from chat history (shorter version)
                 if (recentHistory.Any())
                 {
-                    var enhancedContext = BuildCondensedContextFromHistory(recentHistory, currentQuery);
+                    var enhancedContext = await ContextBuilder.BuildCondensedContextFromHistoryAsync(recentHistory, currentQuery);
                     if (!string.IsNullOrEmpty(enhancedContext))
                     {
                         Console.WriteLine($"🔍 Built context from history: {enhancedContext}");
@@ -257,10 +261,7 @@ namespace TransactionLabeler.API.Services
 
 
 
-        private static string BuildCondensedContextFromHistory(IEnumerable<ChatMessageInfo> recentHistory, string currentQuery)
-        {
-            return ContextBuilder.BuildCondensedContextFromHistory(recentHistory, currentQuery);
-        }
+
 
 
 
