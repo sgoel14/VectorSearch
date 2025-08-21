@@ -13,7 +13,7 @@ namespace TransactionLabeler.API.Services
     public interface ISemanticKernelService
     {
         Task<string> ProcessIntelligentQueryWithAdvancedFeaturesAsync(string connectionString, string query, string? sessionId = null);
-        Task<List<object>> GetChatHistoryAsync(string sessionId);
+        List<object> GetChatHistory(string sessionId);
         Task ClearChatHistoryAsync(string sessionId);
         Task<string> GetContextSummaryAsync(string sessionId);
     }
@@ -356,16 +356,17 @@ namespace TransactionLabeler.API.Services
             - DATE CONVERSION: Always convert quarter references to actual startDate and endDate parameters";
         }
 
-        public async Task<List<object>> GetChatHistoryAsync(string sessionId)
+        public List<object> GetChatHistory(string sessionId)
         {
-            if (!_chatHistory.ContainsKey(sessionId))
-                return new List<object>();
+            if (!_chatHistory.TryGetValue(sessionId, out List<ChatMessageInfo>? value))
+                return [];
 
             // Convert ChatMessageInfo to simple objects for compatibility
-            return _chatHistory[sessionId].Select(msg => new { 
-                Role = msg.Role.ToString(), 
-                Content = msg.Content, 
-                Timestamp = msg.Timestamp 
+            return value.Select(msg => new
+            {
+                Role = msg.Role.ToString(),
+                msg.Content,
+                msg.Timestamp
             }).Cast<object>().ToList();
         }
 
@@ -383,7 +384,7 @@ namespace TransactionLabeler.API.Services
 
         public async Task<string> GetContextSummaryAsync(string sessionId)
         {
-            return _contextSummaries.ContainsKey(sessionId) ? _contextSummaries[sessionId] : "No context available for this session.";
+            return _contextSummaries.TryGetValue(sessionId, out string? value) ? value : "No context available for this session.";
         }
 
         private async Task UpdateContextSummaryAsync(string sessionId, string query, string response)
@@ -463,7 +464,7 @@ namespace TransactionLabeler.API.Services
             }
         }
 
-        private List<string> BuildChatHistoryForQueryRewriting(List<ChatMessageInfo> chatHistory)
+        private static List<string> BuildChatHistoryForQueryRewriting(List<ChatMessageInfo> chatHistory)
         {
             var historyForAI = new List<string>();
             
@@ -480,7 +481,7 @@ namespace TransactionLabeler.API.Services
             return historyForAI;
         }
 
-        private string CleanRewrittenQuestion(string rewrittenQuestion)
+        private static string CleanRewrittenQuestion(string rewrittenQuestion)
         {
             // Remove quotes if present
             rewrittenQuestion = rewrittenQuestion.Trim('"', '\'', '`');
@@ -489,9 +490,9 @@ namespace TransactionLabeler.API.Services
             var prefixesToRemove = new[] { "rewritten question:", "question:", "answer:", "rewritten:", "result:" };
             foreach (var prefix in prefixesToRemove)
             {
-                if (rewrittenQuestion.ToLower().StartsWith(prefix.ToLower()))
+                if (rewrittenQuestion.StartsWith(prefix, StringComparison.CurrentCultureIgnoreCase))
                 {
-                    rewrittenQuestion = rewrittenQuestion.Substring(prefix.Length).Trim();
+                    rewrittenQuestion = rewrittenQuestion[prefix.Length..].Trim();
                     break;
                 }
             }

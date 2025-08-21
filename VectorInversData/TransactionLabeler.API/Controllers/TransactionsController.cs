@@ -1,29 +1,14 @@
-using System;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using TransactionLabeler.API.Models;
 using TransactionLabeler.API.Services;
-using Microsoft.Extensions.Configuration;
-using System.Linq;
-using System.Collections.Generic;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace TransactionLabeler.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class TransactionsController : ControllerBase
+    public class TransactionsController(ITransactionService transactionService, IConfiguration configuration) : ControllerBase
     {
-        private readonly ITransactionService _transactionService;
-        private readonly IConfiguration _configuration;
-
-        public TransactionsController(ITransactionService transactionService, IConfiguration configuration)
-        {
-            _transactionService = transactionService;
-            _configuration = configuration;
-        }
+        private readonly ITransactionService _transactionService = transactionService;
+        private readonly IConfiguration _configuration = configuration;
 
         [HttpPost("update-all-persistent-embeddings")]
         public async Task<IActionResult> UpdateAllPersistentBankStatementEmbeddings()
@@ -46,7 +31,7 @@ namespace TransactionLabeler.API.Controllers
         }
 
         [HttpPost("update-all-invers-embeddings")]
-        public async Task<IActionResult> UpdateAllInversBankTransactionEmbeddings()
+        public async Task<IActionResult> UpdateAllInversBankTransactionEmbeddings(IConfiguration _configuration)
         {
             string connectionString = _configuration.GetConnectionString("DefaultConnection");
             await _transactionService.UpdateAllInversBankTransactionEmbeddingsAsync(connectionString);
@@ -97,15 +82,16 @@ namespace TransactionLabeler.API.Controllers
         }
 
         [HttpGet("chat-history/{sessionId}")]
-        public async Task<ActionResult<object>> GetChatHistory(string sessionId)
+        public ActionResult<object> GetChatHistory(string sessionId)
         {
             try
             {
                 var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
-                var chatHistory = await semanticKernelService.GetChatHistoryAsync(sessionId);
-                return Ok(new { 
-                    sessionId = sessionId,
-                    chatHistory = chatHistory,
+                var chatHistory = semanticKernelService.GetChatHistory(sessionId);
+                return Ok(new
+                {
+                    sessionId,
+                    chatHistory,
                     timestamp = DateTime.UtcNow
                 });
             }
@@ -124,7 +110,7 @@ namespace TransactionLabeler.API.Controllers
                 await semanticKernelService.ClearChatHistoryAsync(sessionId);
                 
                 return Ok(new { 
-                    sessionId = sessionId,
+                    sessionId,
                     status = "Chat history cleared successfully",
                     timestamp = DateTime.UtcNow
                 });
@@ -144,7 +130,7 @@ namespace TransactionLabeler.API.Controllers
                 var summary = await semanticKernelService.GetContextSummaryAsync(sessionId);
                 
                 return Ok(new { 
-                    sessionId = sessionId,
+                    sessionId,
                     contextSummary = summary,
                     timestamp = DateTime.UtcNow
                 });
