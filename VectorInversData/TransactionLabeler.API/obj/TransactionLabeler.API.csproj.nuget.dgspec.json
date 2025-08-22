@@ -43,7 +43,7 @@
         "restoreAuditProperties": {
           "enableAudit": "true",
           "auditLevel": "low",
-          "auditMode": "all"
+          "auditMode": "direct"
         },
         "SdkAnalysisLevel": "9.0.300"
       },
@@ -53,11 +53,11 @@
           "dependencies": {
             "Azure.AI.OpenAI": {
               "target": "Package",
-              "version": "[2.1.0, )"
+              "version": "[2.2.0-beta.5, )"
             },
             "Azure.Core": {
               "target": "Package",
-              "version": "[1.46.2, )"
+              "version": "[1.47.0, )"
             },
             "Microsoft.AspNetCore.OpenApi": {
               "target": "Package",
@@ -83,13 +83,13 @@
               "target": "Package",
               "version": "[9.0.6, )"
             },
-            "Microsoft.Extensions.AI": {
+            "Microsoft.SemanticKernel": {
               "target": "Package",
-              "version": "[9.0.1-preview.1.24570.5, )"
+              "version": "[1.62.0, )"
             },
-            "Microsoft.Extensions.AI.OpenAI": {
+            "Microsoft.SemanticKernel.Connectors.AzureOpenAI": {
               "target": "Package",
-              "version": "[9.0.1-preview.1.24570.5, )"
+              "version": "[1.62.0, )"
             },
             "Swashbuckle.AspNetCore": {
               "target": "Package",
@@ -107,12 +107,6 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
-          "downloadDependencies": [
-            {
-              "name": "Microsoft.Net.Sdk.Compilers.Toolset",
-              "version": "[9.0.302, 9.0.302]"
-            }
-          ],
           "frameworkReferences": {
             "Microsoft.AspNetCore.App": {
               "privateAssets": "none"
@@ -121,7 +115,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.302/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

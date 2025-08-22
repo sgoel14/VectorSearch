@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Intelligent Chat Query</title>
+    <title>Intelligent Chat Query - Advanced Features</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <style>
         body {
@@ -10,36 +10,71 @@
             background: linear-gradient(120deg, #f0f4f8 0%, #e0e7ef 100%);
             min-height: 100vh;
             margin: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            padding: 20px;
         }
         .container {
             background: #fff;
             border-radius: 18px;
             box-shadow: 0 8px 32px rgba(60,72,100,0.12);
-            padding: 2.5em 2em 2em 2em;
-            max-width: 600px;
+            max-width: 1200px;
             width: 100%;
-            margin: 2em auto;
+            margin: 0 auto;
+            height: calc(100vh - 40px);
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            padding: 1.5em 2em 1em 2em;
+            border-bottom: 1px solid #e5e7eb;
         }
         h1 {
             font-size: 1.7em;
             font-weight: 600;
             color: #2d3a4a;
-            margin-bottom: 0.5em;
+            margin: 0;
             text-align: center;
         }
         .subtitle {
             text-align: center;
             color: #6b7280;
-            margin-bottom: 2em;
+            margin: 0.5em 0 0 0;
             font-size: 0.9em;
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .chat-area {
+            flex: 1;
+            padding: 1.5em 2em;
+            padding-right: 320px;
+            overflow-y: auto;
+            background: linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%);
+        }
+        .input-area {
+            padding: 1.5em 2em;
+            border-top: 1px solid #e5e7eb;
+            background: #fff;
         }
         .search-row {
             display: flex;
             gap: 0.5em;
-            margin-bottom: 1.5em;
+            align-items: flex-end;
+        }
+        .sidebar {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 280px;
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 1.2em;
+            box-shadow: 0 8px 32px rgba(60,72,100,0.12);
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            z-index: 1000;
         }
         #query {
             flex: 1;
@@ -70,36 +105,139 @@
             background: linear-gradient(90deg, #4f46e5 0%, #2563eb 100%);
             box-shadow: 0 4px 16px rgba(99,102,241,0.12);
         }
+
+        .session-info {
+            background: #e0f2fe;
+            border-radius: 8px;
+            padding: 1em;
+            margin-bottom: 1em;
+            text-align: center;
+        }
+        .session-id {
+            font-family: monospace;
+            background: #fff;
+            padding: 0.5em;
+            border-radius: 4px;
+            margin: 0.5em 0;
+            word-break: break-all;
+        }
+        .chat-history {
+            max-height: 400px;
+            overflow-y: auto;
+            background: #f3f4f6;
+            border-radius: 8px;
+            padding: 1em;
+            margin-bottom: 1em;
+        }
+        .chat-message {
+            margin-bottom: 1em;
+            padding: 0.5em;
+            border-radius: 6px;
+        }
+        .chat-message.user {
+            background: #dbeafe;
+            border-left: 3px solid #3b82f6;
+        }
+        .chat-message.assistant {
+            background: #dcfce7;
+            border-left: 3px solid #16a34a;
+        }
+        .message-role {
+            font-weight: 600;
+            font-size: 0.8em;
+            margin-bottom: 0.5em;
+        }
+        .message-content {
+            white-space: pre-wrap;
+        }
+
         #results {
-            margin-top: 1.5em;
+            min-height: 100%;
         }
         .result {
-            background: #f3f4f6;
-            border-radius: 10px;
-            padding: 1.2em 1em 1em 1em;
-            margin-bottom: 1.1em;
-            box-shadow: 0 2px 8px rgba(60,72,100,0.06);
-            transition: box-shadow 0.2s;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border-radius: 16px;
+            padding: 1.5em;
+            margin-bottom: 1.5em;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1), 0 1px 4px rgba(0,0,0,0.05);
+            border: 1px solid rgba(255,255,255,0.8);
+            position: relative;
+            overflow: hidden;
+        }
+        .result::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 50%, #06b6d4 100%);
         }
         .result:hover {
-            box-shadow: 0 6px 18px rgba(99,102,241,0.13);
+            box-shadow: 0 8px 24px rgba(99,102,241,0.15), 0 2px 8px rgba(0,0,0,0.08);
+            transform: translateY(-1px);
+            transition: all 0.3s ease;
         }
-        .result b {
-            color: #6366f1;
+        .user-message {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border-radius: 12px;
+            padding: 1em;
+            margin-bottom: 1em;
+            border-left: 4px solid #3b82f6;
+        }
+        .ai-message {
+            background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+            border-radius: 12px;
+            padding: 1em;
+            margin-bottom: 1em;
+            border-left: 4px solid #16a34a;
+        }
+        .message-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.75em;
             font-weight: 600;
+        }
+        .message-icon {
+            font-size: 1.2em;
+            margin-right: 0.5em;
+        }
+        .message-label {
+            color: #374151;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .message-content {
+            color: #1f2937;
+            line-height: 1.6;
+            font-size: 0.95em;
+        }
+        .message-timestamp {
+            text-align: right;
+            font-size: 0.8em;
+            color: #6b7280;
+            margin-top: 0.5em;
+            font-style: italic;
         }
         .loading {
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-top: 2em;
+            margin: 1em 0;
+            padding: 1.5em;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border: 1px solid #bae6fd;
+            border-radius: 12px;
+            border-left: 4px solid #0ea5e9;
+            box-shadow: 0 2px 8px rgba(14,165,233,0.1);
         }
         .spinner {
-            border: 4px solid #e5e7eb;
-            border-top: 4px solid #6366f1;
+            border: 3px solid #e0f2fe;
+            border-top: 3px solid #0ea5e9;
             border-radius: 50%;
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
             animation: spin 1s linear infinite;
             margin-right: 1em;
         }
@@ -117,12 +255,15 @@
             font-family: 'Inter', Arial, sans-serif;
         }
         .examples {
-            background: #f8fafc;
-            border-radius: 8px;
-            padding: 1em;
-            margin-top: 1em;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-radius: 12px;
+            padding: 1.2em;
+            margin-bottom: 1.5em;
+            border-left: 4px solid #0ea5e9;
             font-size: 0.9em;
-            color: #64748b;
+            color: #0f172a;
+            box-shadow: 0 2px 8px rgba(14,165,233,0.08);
+            border: 1px solid rgba(14,165,233,0.1);
         }
         .examples h4 {
             margin: 0 0 0.5em 0;
@@ -132,53 +273,150 @@
             margin: 0;
             padding-left: 1.5em;
         }
-        @media (max-width: 600px) {
-            .container { padding: 1.2em 0.5em; }
-            h1 { font-size: 1.2em; }
+        .advanced-features {
+            background: #f0fdf4;
+            border-radius: 8px;
+            padding: 1em;
+            margin-top: 1em;
+            border-left: 4px solid #16a34a;
+        }
+        .advanced-features h4 {
+            margin: 0 0 0.5em 0;
+            color: #166534;
+        }
+        .transaction-item {
+            background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,250,252,0.8) 100%);
+            border: 1px solid rgba(226,232,240,0.5);
+            border-radius: 10px;
+            padding: 1em;
+            margin: 0.75em 0;
+            border-left: 4px solid #6366f1;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.2s ease;
+        }
+        .transaction-item:hover {
+            background: linear-gradient(135deg, rgba(255,255,255,1) 0%, rgba(248,250,252,0.9) 100%);
+            box-shadow: 0 4px 8px rgba(99,102,241,0.1);
+            transform: translateY(-1px);
+        }
+        .transaction-number {
+            font-weight: 600;
+            color: #6366f1;
+            font-size: 0.95em;
+            margin-right: 0.5em;
+        }
+        .transaction-item strong {
+            color: #374151;
+            font-weight: 600;
+        }
+        @media (max-width: 1024px) {
+            .sidebar { display: none; }
+        }
+        @media (max-width: 768px) {
+            .container { 
+                margin: 10px; 
+                height: calc(100vh - 20px); 
+                border-radius: 12px; 
+            }
+            .header { padding: 1em; }
+            .chat-area { padding: 1em; }
+            .input-area { padding: 1em; }
+            h1 { font-size: 1.4em; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Intelligent Chat Query</h1>
-        <div class="subtitle">Ask natural language questions about your financial transactions</div>
-        <div class="search-row">
-            <input type="text" id="query" placeholder="e.g., Top 10 transactions for marketing costs, Show me office expenditure expenses, What are my top expenses for 2024...">
-            <button onclick="search()">Ask</button>
+        <div class="header">
+            <h1>Visma AI Assistant</h1>
+            <div class="subtitle">Ask natural language questions about your financial transactions</div>
         </div>
-        <div class="examples">
-            <h4>Example queries:</h4>
-            <ul>
-                <li><strong>Expense Categories:</strong> "What are my top 3 expenses for January 2024?"</li>
-                <li><strong>Category Transactions:</strong> "Top 10 transactions for marketing costs"</li>
-                <li><strong>Category Transactions:</strong> "Show me office expenditure expenses"</li>
-                <li><strong>Category Transactions:</strong> "Top 5 transactions for tax related costs"</li>
-                <li><strong>Category Transactions:</strong> "Show me travel expenses for Q1 2024"</li>
-                <li><strong>Category Transactions:</strong> "Top transactions for restaurant costs in 2024"</li>
-                <li><strong>Category Transactions:</strong> "Show me utility expenses"</li>
-                <li><strong>Category Transactions:</strong> "Top transactions for advertising costs"</li>
-                <li><strong>Category Transactions:</strong> "Show me legal expenses"</li>
-                <li><strong>Category Transactions:</strong> "Top transactions for insurance costs"</li>
-                <li><strong>Duplicate Detection:</strong> "Find double salary payments in January 2024"</li>
-                <li><strong>Date Range:</strong> "Show transactions between March 1st and March 31st"</li>
-                <li><strong>Unusual Transactions:</strong> "Find unusual transactions above 2 standard deviations"</li>
-            </ul>
-            <p style="margin-top: 1em; font-size: 0.85em; color: #059669;">
-                <strong>💡 Tip:</strong> You can ask follow-up questions like "Show me the top transactions for marketing costs" or "Show me office expenditure expenses" after getting expense categories.
-            </p>
+        
+        <div class="main-content">
+            <div class="chat-area">
+                <div id="results"></div>
+            </div>
+            
+            <div class="input-area">
+                <div class="search-row">
+                    <input type="text" id="query" placeholder="Ask me anything about your financial transactions...">
+                    <button onclick="searchAdvanced()">Send</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 0.5em;">
+                    <button onclick="clearMainChat()" style="background: #f3f4f6; color: #6b7280; font-size: 0.8em; padding: 0.5em 1em;">Clear Chat</button>
+                    <button onclick="generateNewSession()" style="background: #f3f4f6; color: #6b7280; font-size: 0.8em; padding: 0.5em 1em;">New Session</button>
+                </div>
+            </div>
         </div>
-        <div id="results"></div>
+        
+        <div class="sidebar">
+            <div class="session-info">
+                <h4>Session Management</h4>
+                <div>Session ID:</div>
+                <div class="session-id" id="sessionId"></div>
+                <button onclick="generateNewSession()" style="width: 100%; margin-top: 0.5em;">New Session</button>
+            </div>
+            
+            <div class="chat-history">
+                <h4>Chat History</h4>
+                <div id="chatHistoryDisplay"></div>
+                <button onclick="clearChatHistory()" style="width: 100%; margin-top: 1em;">Clear History</button>
+            </div>
+            
+
+        </div>
     </div>
+    
     <script>
+        let currentSessionId = generateSessionId();
+        
+        function generateSessionId() {
+            return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        function generateNewSession() {
+            currentSessionId = generateSessionId();
+            document.getElementById('sessionId').textContent = currentSessionId;
+            document.getElementById('chatHistoryDisplay').innerHTML = '';
+            document.getElementById('results').innerHTML = '';
+        }
+        
         function showLoading() {
-            document.getElementById('results').innerHTML = `<div class="loading"><div class="spinner"></div>Processing your query...</div>`;
+            // Add loading indicator below existing chat without clearing it
+            const chatArea = document.getElementById('results');
+            const loadingHtml = `<div class="loading" id="currentLoading"><div class="spinner"></div>Processing your query...</div>`;
+            
+            // If there's existing chat, append loading; otherwise replace
+            if (chatArea.innerHTML && !chatArea.innerHTML.includes('loading')) {
+                chatArea.innerHTML += loadingHtml;
+            } else {
+                chatArea.innerHTML = loadingHtml;
+            }
+            
+            // Scroll the chat area container to show the loading indicator
+            const chatContainer = document.querySelector('.chat-area');
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         }
         
         function showError(msg) {
-            document.getElementById('results').innerHTML = `<div style='color:#dc2626;padding:1em;text-align:center;'>${msg}</div>`;
+            // Remove the loading indicator first
+            const loadingElement = document.getElementById('currentLoading');
+            if (loadingElement) {
+                loadingElement.remove();
+            }
+            
+            // Add error message to the chat
+            const chatArea = document.getElementById('results');
+            const errorHtml = `<div style='color:#dc2626;padding:1.5em;text-align:center;background:linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);border:1px solid #fecaca;border-radius:12px;margin-bottom:1em;border-left:4px solid #ef4444;box-shadow:0 2px 8px rgba(239,68,68,0.1);'>❌ ${msg}</div>`;
+            
+            chatArea.innerHTML += errorHtml;
+            
+            // Scroll to show the error
+            const chatContainer = document.querySelector('.chat-area');
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         }
         
-        async function search() {
+        async function searchAdvanced() {
             const query = document.getElementById('query').value.trim();
             if (!query) {
                 showError('Please enter a question to ask.');
@@ -186,33 +424,141 @@
             }
             showLoading();
             try {
-                const response = await fetch('/api/transactions/intelligent-query-with-tools', {
+                const response = await fetch('/api/transactions/intelligent-query-advanced', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(query)
+                    body: JSON.stringify({
+                        query: query,
+                        sessionId: currentSessionId
+                    })
                 });
                 if (!response.ok) throw new Error('Server error');
                 const result = await response.json();
                 
-                document.getElementById('results').innerHTML = `
+                // Add the new conversation to the chat area (append instead of replace)
+                const chatArea = document.getElementById('results');
+                const newMessage = `
                     <div class="result">
-                        <div><b>Your Query:</b> ${result.query}</div>
-                        <div class="chat-response"><b>Response:</b> ${result.response}</div>
-                        <div style="margin-top: 0.5em; font-size: 0.8em; color: #6b7280;">
-                            Processed at: ${new Date(result.timestamp).toLocaleString()}
+                        <div class="user-message">
+                            <div class="message-header">
+                                <span class="message-icon">👤</span>
+                                <span class="message-label">Your Query</span>
+                            </div>
+                            <div class="message-content">${result.query}</div>
+                        </div>
+                        <div class="ai-message">
+                            <div class="message-header">
+                                <span class="message-icon">🤖</span>
+                                <span class="message-label">AI Response</span>
+                            </div>
+                            <div class="message-content">${formatAIResponse(result.response)}</div>
+                        </div>
+                        <div class="message-timestamp">
+                            ${new Date(result.timestamp).toLocaleString()}
                         </div>
                     </div>
                 `;
                 
+                // Remove the loading indicator and add the new message
+                const loadingElement = document.getElementById('currentLoading');
+                if (loadingElement) {
+                    loadingElement.remove();
+                }
+                
+                // Add the new message to the chat
+                chatArea.innerHTML += newMessage;
+                
                 // Clear the input for the next query
                 document.getElementById('query').value = '';
+                
+                // Refresh the sidebar displays
+                console.log('Refreshing chat history...');
+                await refreshChatHistory();
+                console.log('Chat history refreshed');
+                
+                // Scroll to the bottom to show the latest message
+                const chatContainer = document.querySelector('.chat-area');
+                chatContainer.scrollTop = chatContainer.scrollHeight;
             } catch (e) {
                 showError('An error occurred while processing your query.');
             }
         }
         
-        document.getElementById('query').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') search();
+        async function refreshChatHistory() {
+            try {
+                console.log(`Fetching chat history for session: ${currentSessionId}`);
+                const response = await fetch(`/api/transactions/chat-history/${currentSessionId}`);
+                if (!response.ok) throw new Error('Failed to fetch chat history');
+                const result = await response.json();
+                console.log('Chat history response:', result);
+                
+                let historyHtml = '';
+                // The API now returns a wrapped response with chatHistory property
+                if (result && result.chatHistory && result.chatHistory.length > 0) {
+                    result.chatHistory.forEach(message => {
+                        const messageClass = message.role === 'User' ? 'user' : 'assistant';
+                        historyHtml += `
+                            <div class="chat-message ${messageClass}">
+                                <div class="message-role">${message.role}</div>
+                                <div class="message-content">${message.content}</div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    historyHtml = '<p style="color: #6b7280; font-style: italic;">No chat history yet</p>';
+                }
+                
+                document.getElementById('chatHistoryDisplay').innerHTML = historyHtml;
+                console.log(`Chat history updated with ${result?.chatHistory?.length || 0} messages`);
+            } catch (e) {
+                console.error('Error fetching chat history:', e);
+                document.getElementById('chatHistoryDisplay').innerHTML = '<p style="color: #dc2626; font-style: italic;">Error loading chat history</p>';
+            }
+        }
+        
+
+        
+        async function clearChatHistory() {
+            try {
+                const response = await fetch(`/api/transactions/chat-history/${currentSessionId}`, {
+                    method: 'DELETE'
+                });
+                if (!response.ok) throw new Error('Failed to clear chat history');
+                
+                document.getElementById('chatHistoryDisplay').innerHTML = '<p style="color: #6b7280; font-style: italic;">Chat history cleared</p>';
+                document.getElementById('results').innerHTML = '';
+            } catch (e) {
+                console.error('Error clearing chat history:', e);
+            }
+        }
+        
+        function clearMainChat() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        function formatAIResponse(response) {
+            // Convert markdown-like formatting to HTML
+            let formatted = response
+                // Convert **bold** to <strong>bold</strong>
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                // Convert numbered lists (1. item) to HTML lists
+                .replace(/^(\d+)\.\s*(.+)$/gm, '<div class="transaction-item"><span class="transaction-number">$1.</span> $2</div>')
+                // Convert line breaks to <br>
+                .replace(/\n/g, '<br>')
+                // Add spacing between transaction items
+                .replace(/(<\/div>)(<div class="transaction-item">)/g, '$1<br>$2');
+            
+            return formatted;
+        }
+        
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('sessionId').textContent = currentSessionId;
+            document.getElementById('query').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    searchAdvanced();
+                }
+            });
         });
     </script>
 </body>

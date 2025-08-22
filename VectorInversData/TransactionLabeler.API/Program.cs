@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.AI;
+
 using TransactionLabeler.API.Data;
 using TransactionLabeler.API.Services;
 using System.ClientModel;
@@ -35,23 +35,20 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
                 maxRetryCount: 5,
                 maxRetryDelay: TimeSpan.FromSeconds(30),
                 errorNumbersToAdd: null);
-        }));
+        }), ServiceLifetime.Singleton);
 
 // Add services
-builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
-builder.Services.AddScoped<ITransactionService, TransactionService>();
+builder.Services.AddSingleton<IEmbeddingService, EmbeddingService>();
+builder.Services.AddSingleton<ITransactionService, TransactionService>();
+builder.Services.AddSingleton<ISemanticKernelService>(provider =>
+    new SemanticKernelService(
+        provider.GetRequiredService<ITransactionService>(),
+        provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")!,
+        provider.GetRequiredService<IConfiguration>()));
 
-// Configure Microsoft.Extensions.AI ChatClient for function calling
-builder.Services.AddSingleton<IChatClient>(provider =>
-{
-    var configuration = provider.GetRequiredService<IConfiguration>();
-    var azureClient = new AzureOpenAIClient(
-        new Uri(configuration["AzureOpenAI:Endpoint"]!),
-        new ApiKeyCredential(configuration["AzureOpenAI:Key"]!));
-    return azureClient.AsChatClient(configuration["AzureOpenAI:ChatDeploymentName"]!);
-});
 
-builder.Services.AddScoped<FinancialTools>(provider =>
+
+builder.Services.AddSingleton<FinancialTools>(provider =>
     new FinancialTools(
         provider.GetRequiredService<ITransactionService>(),
         provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")!));
@@ -99,8 +96,3 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

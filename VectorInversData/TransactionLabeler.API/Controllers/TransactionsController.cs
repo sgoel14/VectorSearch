@@ -1,26 +1,14 @@
-using System;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using TransactionLabeler.API.Models;
 using TransactionLabeler.API.Services;
-using Microsoft.Extensions.Configuration;
-using System.Linq;
-using System.Collections.Generic;
 
 namespace TransactionLabeler.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class TransactionsController : ControllerBase
+    public class TransactionsController(ITransactionService transactionService, IConfiguration configuration) : ControllerBase
     {
-        private readonly ITransactionService _transactionService;
-        private readonly IConfiguration _configuration;
-
-        public TransactionsController(ITransactionService transactionService, IConfiguration configuration)
-        {
-            _transactionService = transactionService;
-            _configuration = configuration;
-        }
+        private readonly ITransactionService _transactionService = transactionService;
+        private readonly IConfiguration _configuration = configuration;
 
         [HttpPost("update-all-persistent-embeddings")]
         public async Task<IActionResult> UpdateAllPersistentBankStatementEmbeddings()
@@ -43,35 +31,11 @@ namespace TransactionLabeler.API.Controllers
         }
 
         [HttpPost("update-all-invers-embeddings")]
-        public async Task<IActionResult> UpdateAllInversBankTransactionEmbeddings()
+        public async Task<IActionResult> UpdateAllInversBankTransactionEmbeddings(IConfiguration _configuration)
         {
             string connectionString = _configuration.GetConnectionString("DefaultConnection");
             await _transactionService.UpdateAllInversBankTransactionEmbeddingsAsync(connectionString);
             return Ok(new { status = "Batch embedding update for inversbanktransaction triggered." });
-        }
-
-
-
-        [HttpPost("intelligent-vector-search")]
-        public async Task<IActionResult> IntelligentVectorSearch([FromBody] string query)
-        {
-            // Use the new intelligent vector search that classifies queries and uses appropriate embeddings
-            string connectionString = _configuration.GetConnectionString("DefaultConnection");
-            var sqlResults = await _transactionService.IntelligentVectorSearchAsync(connectionString, query);
-
-            // Convert to the expected format and convert distance to similarity
-            var finalResults = sqlResults.Select(r => new {
-                Id = r.Id,
-                Description = r.Description,
-                Amount = r.Amount,
-                TransactionDate = r.TransactionDate,
-                RgsCode = r.RgsCode,
-                RgsDescription = r.RgsDescription,
-                RgsShortDescription = r.RgsShortDescription,
-                Similarity = 1.0f - Math.Min(r.Similarity, 1.0f) // Convert distance to similarity (1 - distance)
-            });
-
-            return Ok(finalResults);
         }
 
         [HttpPost("intelligent-query-with-tools")]
@@ -80,7 +44,8 @@ namespace TransactionLabeler.API.Controllers
             try
             {
                 string connectionString = _configuration.GetConnectionString("DefaultConnection");
-                var result = await _transactionService.ProcessIntelligentQueryWithToolsAsync(connectionString, query);
+                var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
+                var result = await semanticKernelService.ProcessIntelligentQueryWithAdvancedFeaturesAsync(connectionString, query, "legacy-migration");
                 
                 return Ok(new { 
                     query = query,
@@ -94,6 +59,87 @@ namespace TransactionLabeler.API.Controllers
             }
         }
 
+        [HttpPost("intelligent-query-advanced")]
+        public async Task<IActionResult> IntelligentQueryAdvanced([FromBody] AdvancedQueryRequest request)
+        {
+            try
+            {
+                string connectionString = _configuration.GetConnectionString("DefaultConnection");
+                var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
+                var result = await semanticKernelService.ProcessIntelligentQueryWithAdvancedFeaturesAsync(connectionString, request.Query, request.SessionId);
+                
+                return Ok(new { 
+                    query = request.Query,
+                    response = result,
+                    sessionId = request.SessionId ?? "default",
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("chat-history/{sessionId}")]
+        public ActionResult<object> GetChatHistory(string sessionId)
+        {
+            try
+            {
+                var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
+                var chatHistory = semanticKernelService.GetChatHistory(sessionId);
+                return Ok(new
+                {
+                    sessionId,
+                    chatHistory,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = $"Error retrieving chat history: {ex.Message}" });
+            }
+        }
+
+        [HttpDelete("chat-history/{sessionId}")]
+        public async Task<IActionResult> ClearChatHistory(string sessionId)
+        {
+            try
+            {
+                var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
+                await semanticKernelService.ClearChatHistoryAsync(sessionId);
+                
+                return Ok(new { 
+                    sessionId,
+                    status = "Chat history cleared successfully",
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        [HttpGet("context-summary/{sessionId}")]
+        public async Task<IActionResult> GetContextSummary(string sessionId)
+        {
+            try
+            {
+                var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
+                var summary = await semanticKernelService.GetContextSummaryAsync(sessionId);
+                
+                return Ok(new { 
+                    sessionId,
+                    contextSummary = summary,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
 
 
         [HttpGet("health")]
@@ -210,6 +256,12 @@ namespace TransactionLabeler.API.Controllers
         public int TopN { get; set; } = 10;
         public string? CustomerName { get; set; }
         public int TopCategories { get; set; } = 3;
+    }
+
+    public class AdvancedQueryRequest
+    {
+        public string Query { get; set; } = "";
+        public string? SessionId { get; set; }
     }
 
 
