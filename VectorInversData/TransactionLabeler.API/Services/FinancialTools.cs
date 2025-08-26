@@ -128,5 +128,41 @@ namespace TransactionLabeler.API.Services
             
             return await _transactionService.GetCategorySpendingAsync(_connectionString, categoryQuery, parsedStartDate, parsedEndDate, year, customerName);
         }
+
+        [KernelFunction, Description("🚀 ULTIMATE FLEXIBILITY - Execute custom SQL queries for complex financial analysis. Use this for advanced queries that cannot be handled by other functions. IMPORTANT: This function can ONLY execute SELECT queries for security. The AI will generate SQL based on your database schema. Available tables: 'inversbanktransaction' (columns: amount, bankaccountname, bankaccountnumber, description, transactiondate, transactionidentifier_accountnumber, rgsCode, CategoryEmbedding, af_bij, customername), 'rgsmapping' (columns: rgsCode, rgsDescription). You will have to use vector cosine similarities first to find categories based on the user query for some cases. Examples: 'Show me all transactions above 1000 euros', 'Find transactions with specific RGS codes', 'Complex aggregations by date ranges', 'Custom financial reports'. The AI will automatically generate safe, read-only SQL queries.")]
+        public async Task<string> ExecuteReadOnlySQLQuery(string sqlQuery)
+        {
+            try
+            {
+                // Security check: Only allow SELECT queries
+                var trimmedQuery = sqlQuery.Trim();
+                if (!trimmedQuery.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "❌ SECURITY ERROR: Only SELECT queries are allowed for security reasons. The query must start with 'SELECT'.";
+                }
+
+                // Additional security checks
+                var forbiddenKeywords = new[] { "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", "EXECUTE", "TRUNCATE" };
+                foreach (var keyword in forbiddenKeywords)
+                {
+                    if (trimmedQuery.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return $"❌ SECURITY ERROR: The keyword '{keyword}' is not allowed for security reasons. Only SELECT queries are permitted.";
+                    }
+                }
+
+                Console.WriteLine($"🚀 Executing SQL Query: {sqlQuery}");
+                
+                // Execute the query using the transaction service
+                var results = await _transactionService.ExecuteCustomSQLQueryAsync(sqlQuery, _connectionString);
+                
+                return results;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error executing SQL query: {ex.Message}");
+                return $"❌ Error executing SQL query: {ex.Message}";
+            }
+        }
     }
 }
