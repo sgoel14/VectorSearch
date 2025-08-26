@@ -22,8 +22,9 @@ namespace TransactionLabeler.API.Services
         Task<List<TransactionResult>> GetTopTransactionsForCategoryQueryAsync(string connectionString, string categoryQuery, DateTime? startDate = null, DateTime? endDate = null, int? year = null, int topN = 10, string? customerName = null, int topCategories = 3);
         
         Task<List<CategoryExpenseResult>> GetTopExpenseCategoriesForDateRangeAsync(string connectionString, DateTime startDate, DateTime endDate, string? customerName = null, int topN = 5);
-        Task<List<CategoryExpenseResult>> GetTopExpenseCategoriesFlexibleAsync(string connectionString, DateTime? startDate, DateTime? endDate, int? year, string? customerName = null, int topN = 5);
-        Task<CategorySpendingResult> GetCategorySpendingAsync(string connectionString, string categoryQuery, DateTime? startDate, DateTime? endDate, int? year, string? customerName = null);
+        Task<List<CategoryExpenseResult>> GetTopExpenseCategoriesFlexibleAsync(string connectionString, DateTime? startDate = null, DateTime? endDate = null, int? year = null, string? customerName = null, int topN = 5);
+        Task<CategorySpendingResult> GetCategorySpendingAsync(string connectionString, string categoryQuery, DateTime? startDate = null, DateTime? endDate = null, int? year = null, string? customerName = null);
+        Task<string> ExecuteCustomSQLQueryAsync(string sqlQuery, string connectionString);
     }
 
     public class TransactionService : ITransactionService
@@ -636,6 +637,87 @@ namespace TransactionLabeler.API.Services
             cmd.Parameters.AddWithValue("@Embedding", JsonSerializer.Serialize(embedding));
             await conn.OpenAsync();
             await cmd.ExecuteNonQueryAsync();
+        }
+
+        /// <summary>
+        /// Execute custom SQL queries for complex financial analysis
+        /// </summary>
+        public async Task<string> ExecuteCustomSQLQueryAsync(string sqlQuery, string connectionString)
+        {
+            try
+            {
+                using var connection = new SqlConnection(connectionString);
+                await connection.OpenAsync();
+
+                using var command = new SqlCommand(sqlQuery, connection);
+                command.CommandTimeout = 30; // 30 second timeout
+
+                using var reader = await command.ExecuteReaderAsync();
+                
+                var results = new List<Dictionary<string, object>>();
+                var columns = new List<string>();
+
+                // Get column names
+                for (int i = 0; i < reader.FieldCount; i++)
+                {
+                    columns.Add(reader.GetName(i));
+                }
+
+                // Read data
+                while (await reader.ReadAsync())
+                {
+                    var row = new Dictionary<string, object>();
+                    for (int i = 0; i < reader.FieldCount; i++)
+                    {
+                        var value = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                        row[columns[i]] = value;
+                    }
+                    results.Add(row);
+                }
+
+                // Format results as a readable string
+                if (results.Count == 0)
+                {
+                    return "📊 Query executed successfully. No results found.";
+                }
+
+                var formattedResults = FormatSQLResults(columns, results);
+                return $"📊 Query executed successfully. Found {results.Count} results:\n\n{formattedResults}";
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Database execution error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Format SQL results as a readable markdown table
+        /// </summary>
+        private static string FormatSQLResults(List<string> columns, List<Dictionary<string, object>> results)
+        {
+            var output = new System.Text.StringBuilder();
+
+            // Header
+            output.AppendLine("| " + string.Join(" | ", columns) + " |");
+            output.AppendLine("|" + string.Join("|", columns.Select(c => "---")) + "|");
+
+            // Data rows
+            foreach (var row in results.Take(100)) // Limit to first 100 rows for readability
+            {
+                var values = columns.Select(col => 
+                {
+                    var value = row.ContainsKey(col) ? row[col] : null;
+                    return value?.ToString() ?? "NULL";
+                });
+                output.AppendLine("| " + string.Join(" | ", values) + " |");
+            }
+
+            if (results.Count > 100)
+            {
+                output.AppendLine($"\n... and {results.Count - 100} more rows (showing first 100 for readability)");
+            }
+
+            return output.ToString();
         }
     }
 }        
