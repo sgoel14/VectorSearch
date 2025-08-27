@@ -13,7 +13,7 @@ namespace TransactionLabeler.API.Services
     public interface ISemanticKernelService
     {
         Task<string> ProcessIntelligentQueryWithAdvancedFeaturesAsync(string connectionString, string query, string? sessionId = null);
-        List<object> GetChatHistory(string sessionId);
+        Task<List<object>> GetChatHistoryAsync(string sessionId);
         Task ClearChatHistoryAsync(string sessionId);
         Task<string> GetContextSummaryAsync(string sessionId);
     }
@@ -26,14 +26,15 @@ namespace TransactionLabeler.API.Services
         private readonly Dictionary<string, List<ChatMessageInfo>> _chatHistory;
         private readonly Dictionary<string, string> _contextSummaries;
         private readonly IConfiguration _configuration;
+        private readonly IChatHistoryService _chatHistoryService;
 
 
-
-        public SemanticKernelService(ITransactionService transactionService, string connectionString, IConfiguration configuration)
+        public SemanticKernelService(ITransactionService transactionService, string connectionString, IConfiguration configuration, IChatHistoryService chatHistoryService)
         {
             _transactionService = transactionService;
             _connectionString = connectionString;
             _configuration = configuration;
+            _chatHistoryService = chatHistoryService;
             _chatHistory = new Dictionary<string, List<ChatMessageInfo>>();
             _contextSummaries = new Dictionary<string, string>();
             
@@ -65,51 +66,24 @@ namespace TransactionLabeler.API.Services
                     Console.WriteLine($"🆔 Using existing session ID: {sessionId}");
                 }
 
-                // Get or create chat history for this session
-                Console.WriteLine($"🔍 Checking _chatHistory dictionary:");
-                Console.WriteLine($"   Dictionary contains {_chatHistory.Count} sessions");
-                Console.WriteLine($"   Session keys: [{string.Join(", ", _chatHistory.Keys)}]");
-                Console.WriteLine($"   Looking for session: {sessionId}");
-                Console.WriteLine($"   ContainsKey result: {_chatHistory.ContainsKey(sessionId)}");
-                
-                if (!_chatHistory.ContainsKey(sessionId))
-                {
-                    _chatHistory[sessionId] = new List<ChatMessageInfo>();
-                    Console.WriteLine($"📝 Created new chat history for session: {sessionId}");
-                }
-                else
-                {
-                    Console.WriteLine($"📝 Found existing chat history for session: {sessionId} with {_chatHistory[sessionId].Count} messages");
-                }
-
-                // Log current chat history state
-                var currentHistory = _chatHistory[sessionId];
-                Console.WriteLine($"🔍 Current chat history for session {sessionId}:");
-                foreach (var msg in currentHistory)
-                {
-                    Console.WriteLine($"   {msg.Role}: {msg.Content.Substring(0, Math.Min(100, msg.Content.Length))}...");
-                }
-
-                // Add user message to chat history
+                // Add user message to Azure AI Search
                 var userMessage = new ChatMessageInfo(AuthorRole.User, query);
-                currentHistory.Add(userMessage);
-                Console.WriteLine($"✅ Added user message to chat history: '{query}'");
-
-                // Log updated chat history count
-                Console.WriteLine($"📊 Chat history now contains {currentHistory.Count} messages");
+                await _chatHistoryService.AddMessageAsync(sessionId, userMessage);
+                Console.WriteLine($"✅ Added user message to Azure AI Search: '{query}'");
 
                 // Let Semantic Kernel intelligently decide which tools to use
                 Console.WriteLine($"🤖 Processing query intelligently: {query}");
-                var result = await ProcessQueryIntelligentlyAsync(connectionString, query, sessionId, currentHistory);
+                var result = await ProcessQueryIntelligentlyAsync(connectionString, query, sessionId);
                 
-                // Add AI response to chat history
+                // Add AI response to Azure AI Search
                 var aiMessage = new ChatMessageInfo(AuthorRole.Assistant, result);
-                currentHistory.Add(aiMessage);
-                Console.WriteLine($"✅ Added AI response to chat history: '{result.Substring(0, Math.Min(100, result.Length))}...'");
+                await _chatHistoryService.AddMessageAsync(sessionId, aiMessage);
+                Console.WriteLine($"✅ Added AI response to Azure AI Search: '{result.Substring(0, Math.Min(100, result.Length))}...'");
 
-                // Log final chat history state
-                Console.WriteLine($"📊 Final chat history for session {sessionId} contains {currentHistory.Count} messages:");
-                foreach (var msg in currentHistory)
+                // Log final chat history state from Azure AI Search
+                var finalHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
+                Console.WriteLine($"📊 Final chat history for session {sessionId} contains {finalHistory.Count} messages:");
+                foreach (var msg in finalHistory)
                 {
                     Console.WriteLine($"   {msg.Role}: {msg.Content.Substring(0, Math.Min(100, msg.Content.Length))}...");
                 }
@@ -123,33 +97,22 @@ namespace TransactionLabeler.API.Services
             }
         }
 
-        private async Task<string> ProcessQueryIntelligentlyAsync(string connectionString, string query, string sessionId, List<ChatMessageInfo> chatHistory)
+        private async Task<string> ProcessQueryIntelligentlyAsync(string connectionString, string query, string sessionId)
         {
             Console.WriteLine($"🚀 ProcessQueryIntelligentlyAsync called with:");
             Console.WriteLine($"   Query: '{query}'");
-            foreach (var msg in chatHistory)
-            {
-                Console.WriteLine($"     {msg.Role}: {msg.Content[..Math.Min(100, msg.Content.Length)]}...");
-            }
             
             try
             {
                 // Apply AI-powered context-aware question reframing FIRST for general questions
-                var reframedQuestion = await ReframeQuestionWithContextAsync(query, chatHistory);
+                var reframedQuestion = await ReframeQuestionWithContextAsync(query, sessionId);
                 if (reframedQuestion != query)
                 {
-                    Console.WriteLine($"�� Context Reframing: '{query}' → '{reframedQuestion}'");
+                    Console.WriteLine($" Context Reframing: '{query}' → '{reframedQuestion}'");
                     query = reframedQuestion; // Use the reframed question
                     
-                    // CRITICAL: Update the chat history with the reframed question for future context analysis
-                    if (chatHistory.Count != 0)
-                    {
-                        var lastUserMessage = chatHistory.LastOrDefault(m => m.Role == AuthorRole.User);
-                        if (lastUserMessage != null)
-                        {
-                            lastUserMessage.Content = reframedQuestion; // Update with reframed version
-                        }
-                    }
+                                         // CRITICAL: Update the chat history with the reframed question for future context analysis
+                     // Note: The reframed question will be used for this query, but we don't update previous messages
                 }
                 
                 // Check if FinancialTools plugin is already imported
@@ -197,7 +160,7 @@ namespace TransactionLabeler.API.Services
                     var responseContent = result.ToString();
 
                     // Add assistant response to chat history
-                    chatHistory.Add(new ChatMessageInfo(AuthorRole.Assistant, responseContent ?? "No response generated."));
+                    await _chatHistoryService.AddMessageAsync(sessionId, new ChatMessageInfo(AuthorRole.Assistant, responseContent ?? "No response generated."));
 
                     // Update context summary for long-term RAG
                     await UpdateContextSummaryAsync(sessionId, query, responseContent ?? "");
@@ -225,10 +188,11 @@ namespace TransactionLabeler.API.Services
             };
 
             // Add recent chat history for context window management (last 5 messages to reduce token count)
-            if (_chatHistory.TryGetValue(sessionId, out List<ChatMessageInfo>? value))
+            var recentHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
+            if (recentHistory.Any())
             {
-                var recentHistory = value.TakeLast(5); // Reduced from 10 to 5
-                foreach (var message in recentHistory)
+                var recentHistoryForKernel = recentHistory.TakeLast(5); // Reduced from 10 to 5
+                foreach (var message in recentHistoryForKernel)
                 {
                     // Truncate long messages to reduce token count
                     var truncatedContent = message.Content.Length > 500 ? message.Content.Substring(0, 500) + "..." : message.Content;
@@ -236,9 +200,9 @@ namespace TransactionLabeler.API.Services
                 }
                 
                 // Add condensed enhanced context from chat history (shorter version)
-                if (recentHistory.Any())
+                if (recentHistoryForKernel.Any())
                 {
-                    var enhancedContext = await ContextBuilder.BuildCondensedContextFromHistoryAsync(recentHistory, currentQuery);
+                    var enhancedContext = await ContextBuilder.BuildCondensedContextFromHistoryAsync(recentHistoryForKernel, currentQuery);
                     if (!string.IsNullOrEmpty(enhancedContext))
                     {
                         Console.WriteLine($"🔍 Built context from history: {enhancedContext}");
@@ -250,9 +214,10 @@ namespace TransactionLabeler.API.Services
             }
 
             // Add condensed context summary if available (shorter version)
-            if (_contextSummaries.TryGetValue(sessionId, out string? summary))
+            var contextSummary = await _chatHistoryService.GetContextSummaryAsync(sessionId);
+            if (!string.IsNullOrEmpty(contextSummary))
             {
-                var condensedSummary = summary.Length > 300 ? summary.Substring(0, 300) + "..." : summary;
+                var condensedSummary = contextSummary.Length > 300 ? contextSummary.Substring(0, 300) + "..." : contextSummary;
                 chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Summary: {condensedSummary}"));
             }
 
@@ -315,13 +280,25 @@ namespace TransactionLabeler.API.Services
             - Complex joins: 'Show me all transactions with their RGS descriptions'
             - Date range analysis: 'Compare spending between Q1 and Q2 2025'
             - Statistical queries: 'What's the average transaction amount by month?'
+            - Unknown counterparty analysis: 'Find transactions to/from new/unusual bank accounts'
+            - Pattern detection: 'Identify transactions that deviate from historical patterns'
+            - Historical comparison: 'Compare current month transactions with previous months'
+            
+            🎯 UNKNOWN COUNTERPARTY ANALYSIS APPROACH:
+            - Use subqueries to identify bank accounts that appear in current period but not in historical periods
+            - Compare current month transactions with previous 3-6 months to find new counterparties
+            - Use NOT EXISTS or NOT IN with subqueries to find new bank accounts
+            - Example: Find transactions where bankaccountnumber NOT IN (SELECT DISTINCT bankaccountnumber FROM previous_periods)
 
             🔒 SQL SECURITY RULES:
             - ONLY generate SELECT queries (never INSERT, UPDATE, DELETE, DROP, CREATE, ALTER)
-            - The function automatically blocks dangerous SQL keywords
+            - The function automatically blocks dangerous SQL keywords - but basic SQL constructs are allowed
             - All queries are read-only for security
+            - You CAN use: subqueries, date functions, aggregations, JOINs, WHERE clauses, ORDER BY, GROUP BY, TOP
+            - You CANNOT use: INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, EXEC, sp_, xp_
             - Use parameterized queries when possible
             - Limit results to reasonable amounts (use TOP clause)
+            - For unknown counterparty analysis, use subqueries to compare current vs historical patterns
 
             WHEN TO USE FINANCIAL TOOLS:
             - User asks for actual transaction data: 'show me transactions for X', 'get transactions for customer Y'
@@ -377,6 +354,8 @@ namespace TransactionLabeler.API.Services
             CRITICAL RULES:
             - Make only ONE function call per query, then provide a final response with the actual data
             - Never apologize or say there was an issue - just show the data
+            - For unknown counterparty queries: ALWAYS use ExecuteReadOnlySQLQuery to generate and execute SQL
+            - SQL queries are safe and allowed - don't be overly cautious about basic SQL constructs
             - For category searches, always show the RGS codes and descriptions clearly
             - For transaction searches, always show the actual transaction details
             - MANDATORY: If you receive transaction data, format it clearly showing: Description, Amount, Date, RGS Code, and RGS Description
@@ -400,13 +379,12 @@ namespace TransactionLabeler.API.Services
             - SQL QUERY GENERATION: When using ExecuteReadOnlySQLQuery, generate clear, readable SQL with proper formatting and comments. Always include ORDER BY clauses for predictable results and use TOP clauses to limit large result sets.";
         }
 
-        public List<object> GetChatHistory(string sessionId)
+        public async Task<List<object>> GetChatHistoryAsync(string sessionId)
         {
-            if (!_chatHistory.TryGetValue(sessionId, out List<ChatMessageInfo>? value))
-                return [];
-
+            var chatHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
+            
             // Convert ChatMessageInfo to simple objects for compatibility
-            return value.Select(msg => new
+            return chatHistory.Select(msg => new
             {
                 Role = msg.Role.ToString(),
                 msg.Content,
@@ -416,10 +394,7 @@ namespace TransactionLabeler.API.Services
 
         public async Task ClearChatHistoryAsync(string sessionId)
         {
-            if (_chatHistory.ContainsKey(sessionId))
-            {
-                _chatHistory[sessionId].Clear();
-            }
+            await _chatHistoryService.ClearChatHistoryAsync(sessionId);
             if (_contextSummaries.ContainsKey(sessionId))
             {
                 _contextSummaries.Remove(sessionId);
@@ -428,19 +403,36 @@ namespace TransactionLabeler.API.Services
 
         public async Task<string> GetContextSummaryAsync(string sessionId)
         {
+            // Try to get from Azure AI Search first
+            var azureSummary = await _chatHistoryService.GetContextSummaryAsync(sessionId);
+            if (!string.IsNullOrEmpty(azureSummary))
+            {
+                return azureSummary;
+            }
+            
+            // Fallback to local dictionary
             return _contextSummaries.TryGetValue(sessionId, out string? value) ? value : "No context available for this session.";
         }
 
         private async Task UpdateContextSummaryAsync(string sessionId, string query, string response)
         {
+            // Update context summary using ContextManager (for local processing)
             await ContextManager.UpdateContextSummaryAsync(_contextSummaries, sessionId, query, response);
+            
+            // Also update in Azure AI Search
+            var summary = _contextSummaries.GetValueOrDefault(sessionId, "");
+            if (!string.IsNullOrEmpty(summary))
+            {
+                await _chatHistoryService.UpdateContextSummaryAsync(sessionId, summary);
+            }
         }
 
-        private async Task<string> ReframeQuestionWithContextAsync(string question, List<ChatMessageInfo> chatHistory)
+        private async Task<string> ReframeQuestionWithContextAsync(string question, string sessionId)
         {
             try
             {
                 // If no chat history or only 1 message, no need to reframe
+                var chatHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
                 if (chatHistory == null || chatHistory.Count <= 1)
                 {
                     return question;
@@ -512,8 +504,8 @@ namespace TransactionLabeler.API.Services
         {
             var historyForAI = new List<string>();
             
-            // Take last 6 messages (3 user, 3 AI) for context
-            var recentHistory = chatHistory.TakeLast(6).ToList();
+            // Take last 6 messages (5 user, 5 AI) for context
+            var recentHistory = chatHistory.TakeLast(10).ToList();
             
             foreach (var message in recentHistory)
             {

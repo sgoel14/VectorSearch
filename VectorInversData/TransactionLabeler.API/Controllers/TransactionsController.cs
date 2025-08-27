@@ -82,12 +82,12 @@ namespace TransactionLabeler.API.Controllers
         }
 
         [HttpGet("chat-history/{sessionId}")]
-        public ActionResult<object> GetChatHistory(string sessionId)
+        public async Task<ActionResult<object>> GetChatHistory(string sessionId)
         {
             try
             {
                 var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
-                var chatHistory = semanticKernelService.GetChatHistory(sessionId);
+                var chatHistory = await semanticKernelService.GetChatHistoryAsync(sessionId);
                 return Ok(new
                 {
                     sessionId,

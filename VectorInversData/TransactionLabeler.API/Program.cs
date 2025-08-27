@@ -40,11 +40,16 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // Add services
 builder.Services.AddSingleton<IEmbeddingService, EmbeddingService>();
 builder.Services.AddSingleton<ITransactionService, TransactionService>();
+builder.Services.AddSingleton<IChatHistoryService>(provider =>
+    new AzureAISearchChatHistoryService(
+        provider.GetRequiredService<IConfiguration>(),
+        provider.GetRequiredService<IEmbeddingService>()));
 builder.Services.AddSingleton<ISemanticKernelService>(provider =>
     new SemanticKernelService(
         provider.GetRequiredService<ITransactionService>(),
         provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")!,
-        provider.GetRequiredService<IConfiguration>()));
+        provider.GetRequiredService<IConfiguration>(),
+        provider.GetRequiredService<IChatHistoryService>()));
 
 
 
@@ -93,6 +98,19 @@ using (var scope = app.Services.CreateScope())
         // Continue running the app even if database initialization fails
         // This allows the API to start and provide error messages for database operations
     }
+}
+
+// Ensure Azure AI Search indexes are created during startup
+try
+{
+    Console.WriteLine("🔍 Initializing Azure AI Search service...");
+    var chatHistoryService = app.Services.GetRequiredService<IChatHistoryService>();
+    Console.WriteLine("✅ Azure AI Search service initialized successfully!");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"❌ Failed to initialize Azure AI Search service: {ex.Message}");
+    Console.WriteLine("⚠️ Chat history functionality may not work properly");
 }
 
 app.Run();
