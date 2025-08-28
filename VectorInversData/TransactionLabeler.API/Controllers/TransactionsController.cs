@@ -101,6 +101,49 @@ namespace TransactionLabeler.API.Controllers
             }
         }
 
+        [HttpPost("create-summary/{sessionId}")]
+        public async Task<ActionResult<object>> CreateManualSummary(string sessionId)
+        {
+            try
+            {
+                var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
+                var summary = await semanticKernelService.CreateManualSummaryAsync(sessionId);
+                
+                return Ok(new
+                {
+                    sessionId,
+                    summary,
+                    message = "Manual context summary created and stored in Azure AI Search",
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = $"Error creating manual summary: {ex.Message}" });
+            }
+        }
+
+        [HttpGet("summary-stats/{sessionId}")]
+        public async Task<ActionResult<object>> GetSummaryStats(string sessionId)
+        {
+            try
+            {
+                var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
+                var stats = await semanticKernelService.GetSummaryStatsAsync(sessionId);
+                
+                return Ok(new
+                {
+                    sessionId,
+                    stats,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = $"Error getting summary stats: {ex.Message}" });
+            }
+        }
+
         [HttpDelete("chat-history/{sessionId}")]
         public async Task<IActionResult> ClearChatHistory(string sessionId)
         {

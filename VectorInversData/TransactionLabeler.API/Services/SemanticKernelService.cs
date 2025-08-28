@@ -16,6 +16,8 @@ namespace TransactionLabeler.API.Services
         Task<List<object>> GetChatHistoryAsync(string sessionId);
         Task ClearChatHistoryAsync(string sessionId);
         Task<string> GetContextSummaryAsync(string sessionId);
+        Task<string> CreateManualSummaryAsync(string sessionId);
+        Task<object> GetSummaryStatsAsync(string sessionId);
     }
 
     public class SemanticKernelService : ISemanticKernelService
@@ -27,6 +29,7 @@ namespace TransactionLabeler.API.Services
         private readonly Dictionary<string, string> _contextSummaries;
         private readonly IConfiguration _configuration;
         private readonly IChatHistoryService _chatHistoryService;
+        private const int MESSAGES_BEFORE_SUMMARY = 5; // Create summary every 5 messages (2.5 conversation turns)
 
 
         public SemanticKernelService(ITransactionService transactionService, string connectionString, IConfiguration configuration, IChatHistoryService chatHistoryService)
@@ -79,6 +82,9 @@ namespace TransactionLabeler.API.Services
                 var aiMessage = new ChatMessageInfo(AuthorRole.Assistant, result);
                 await _chatHistoryService.AddMessageAsync(sessionId, aiMessage);
                 Console.WriteLine($"✅ Added AI response to Azure AI Search: '{result.Substring(0, Math.Min(100, result.Length))}...'");
+
+                // Check if we should create an automatic context summary
+                await CheckAndCreateAutomaticSummaryAsync(sessionId);
 
                 // Log final chat history state from Azure AI Search
                 var finalHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
@@ -187,50 +193,51 @@ namespace TransactionLabeler.API.Services
                 new(AuthorRole.System, GetSystemPrompt())
             };
 
-            // Add recent chat history for context window management (last 5 messages to reduce token count)
-            var recentHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
-            if (recentHistory.Any())
+            // Use vector search to get semantically relevant chat history instead of just recent messages
+            var relevantHistory = await _chatHistoryService.GetRelevantChatHistoryAsync(sessionId, currentQuery, 8);
+            if (relevantHistory.Any())
             {
-                var recentHistoryForKernel = recentHistory.TakeLast(5); // Reduced from 10 to 5
-                foreach (var message in recentHistoryForKernel)
+                Console.WriteLine($"🔍 Retrieved {relevantHistory.Count} semantically relevant messages for context");
+                foreach (var message in relevantHistory)
                 {
                     // Truncate long messages to reduce token count
                     var truncatedContent = message.Content.Length > 500 ? message.Content.Substring(0, 500) + "..." : message.Content;
                     chatHistory.Add(new ChatMessageContent(message.Role, truncatedContent));
                 }
                 
-                // Add condensed enhanced context from chat history (shorter version)
-                if (recentHistoryForKernel.Any())
+                // Add condensed enhanced context from relevant chat history
+                if (relevantHistory.Any())
                 {
-                    var enhancedContext = await ContextBuilder.BuildCondensedContextFromHistoryAsync(recentHistoryForKernel, currentQuery);
+                    var enhancedContext = await ContextBuilder.BuildCondensedContextFromHistoryAsync(relevantHistory, currentQuery);
                     if (!string.IsNullOrEmpty(enhancedContext))
                     {
-                        Console.WriteLine($"🔍 Built context from history: {enhancedContext}");
+                        Console.WriteLine($"🔍 Built context from relevant history: {enhancedContext}");
                         chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Context: {enhancedContext}"));
                     }
-                    
-
                 }
             }
 
-            // Add condensed context summary if available (shorter version)
-            var contextSummary = await _chatHistoryService.GetContextSummaryAsync(sessionId);
-            if (!string.IsNullOrEmpty(contextSummary))
+            // Use vector search to get semantically relevant context summary
+            var relevantContextSummary = await _chatHistoryService.GetRelevantContextSummaryAsync(sessionId, currentQuery);
+            if (!string.IsNullOrEmpty(relevantContextSummary))
             {
-                var condensedSummary = contextSummary.Length > 300 ? contextSummary.Substring(0, 300) + "..." : contextSummary;
-                chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Summary: {condensedSummary}"));
+                var condensedSummary = relevantContextSummary.Length > 300 ? relevantContextSummary.Substring(0, 300) + "..." : relevantContextSummary;
+                chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Relevant Summary: {condensedSummary}"));
+                Console.WriteLine($"🔍 Added semantically relevant context summary: {condensedSummary.Substring(0, Math.Min(100, condensedSummary.Length))}...");
+            }
+            else
+            {
+                // Fallback to regular context summary if vector search doesn't find relevant summary
+                var fallbackContextSummary = await _chatHistoryService.GetContextSummaryAsync(sessionId);
+                if (!string.IsNullOrEmpty(fallbackContextSummary))
+                {
+                    var fallbackCondensedSummary = fallbackContextSummary.Length > 300 ? fallbackContextSummary.Substring(0, 300) + "..." : fallbackContextSummary;
+                    chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Summary: {fallbackCondensedSummary}"));
+                }
             }
 
             return chatHistory;
         }
-
-
-
-
-
-
-
-
 
         private static string GetSystemPrompt()
         {
@@ -414,6 +421,88 @@ namespace TransactionLabeler.API.Services
             return _contextSummaries.TryGetValue(sessionId, out string? value) ? value : "No context available for this session.";
         }
 
+        public async Task<string> CreateManualSummaryAsync(string sessionId)
+        {
+            try
+            {
+                Console.WriteLine($"📝 Manually creating context summary for session {sessionId}");
+                
+                // Get current chat history
+                var chatHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
+                if (!chatHistory.Any())
+                {
+                    return "No chat history available to summarize.";
+                }
+
+                // Create a comprehensive summary
+                var summaryBuilder = new System.Text.StringBuilder();
+                summaryBuilder.AppendLine($"Manual Session Summary for {sessionId}:");
+                summaryBuilder.AppendLine($"Total Messages: {chatHistory.Count}");
+                summaryBuilder.AppendLine($"Session Duration: {chatHistory.First().Timestamp} to {chatHistory.Last().Timestamp}");
+                summaryBuilder.AppendLine();
+                summaryBuilder.AppendLine("Conversation Overview:");
+                
+                // Group messages by conversation turns
+                var conversationTurns = new List<string>();
+                for (int i = 0; i < chatHistory.Count; i += 2)
+                {
+                    if (i + 1 < chatHistory.Count)
+                    {
+                        var userMsg = chatHistory[i];
+                        var aiMsg = chatHistory[i + 1];
+                        var turn = $"Turn {(i/2) + 1}: User asked about '{userMsg.Content.Substring(0, Math.Min(80, userMsg.Content.Length))}...' → AI provided detailed response";
+                        conversationTurns.Add(turn);
+                    }
+                }
+
+                foreach (var turn in conversationTurns)
+                {
+                    summaryBuilder.AppendLine($"- {turn}");
+                }
+
+                var manualSummary = summaryBuilder.ToString().Trim();
+                
+                // Store the manual summary in Azure AI Search
+                await _chatHistoryService.UpdateContextSummaryAsync(sessionId, manualSummary);
+                
+                Console.WriteLine($"✅ Manual context summary created and stored for session {sessionId}");
+                return manualSummary;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error creating manual summary for session {sessionId}: {ex.Message}");
+                return $"Error creating summary: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Gets summary statistics for monitoring the automatic summary creation
+        /// </summary>
+        public async Task<object> GetSummaryStatsAsync(string sessionId)
+        {
+            try
+            {
+                var chatHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
+                var messageCount = chatHistory.Count;
+                var messagesUntilNextSummary = MESSAGES_BEFORE_SUMMARY - (messageCount % MESSAGES_BEFORE_SUMMARY);
+                
+                return new
+                {
+                    sessionId,
+                    totalMessages = messageCount,
+                    messagesUntilNextSummary = messagesUntilNextSummary == MESSAGES_BEFORE_SUMMARY ? 0 : messagesUntilNextSummary,
+                    nextSummaryAt = messageCount > 0 ? messageCount + messagesUntilNextSummary : MESSAGES_BEFORE_SUMMARY,
+                    summaryFrequency = MESSAGES_BEFORE_SUMMARY,
+                    hasSummary = !string.IsNullOrEmpty(await _chatHistoryService.GetContextSummaryAsync(sessionId))
+                };
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ Error getting summary stats for session {sessionId}: {ex.Message}");
+                return new { error = ex.Message };
+            }
+        }
+
         private async Task UpdateContextSummaryAsync(string sessionId, string query, string response)
         {
             // Update context summary using ContextManager (for local processing)
@@ -427,22 +516,76 @@ namespace TransactionLabeler.API.Services
             }
         }
 
+        /// <summary>
+        /// Automatically creates context summaries every N messages to keep the chat-summaries-vector index populated
+        /// </summary>
+        private async Task CheckAndCreateAutomaticSummaryAsync(string sessionId)
+        {
+            try
+            {
+                // Get current chat history count for this session
+                var chatHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
+                var messageCount = chatHistory.Count;
+
+                Console.WriteLine($"🔍 Checking if automatic summary needed for session {sessionId} (current messages: {messageCount})");
+
+                // Create summary every MESSAGES_BEFORE_SUMMARY messages
+                if (messageCount > 0 && messageCount % MESSAGES_BEFORE_SUMMARY == 0)
+                {
+                    Console.WriteLine($"📝 Creating automatic context summary for session {sessionId} after {messageCount} messages");
+
+                    // Get the last few messages to create a meaningful summary
+                    var recentMessages = chatHistory.TakeLast(Math.Min(10, messageCount)).ToList();
+                    
+                    // Create a simple but informative summary
+                    var summaryBuilder = new System.Text.StringBuilder();
+                    summaryBuilder.AppendLine($"Session Summary (Last {recentMessages.Count} messages):");
+                    
+                    foreach (var message in recentMessages)
+                    {
+                        var role = message.Role == AuthorRole.User ? "User" : "Assistant";
+                        var truncatedContent = message.Content.Length > 100 
+                            ? message.Content.Substring(0, 100) + "..." 
+                            : message.Content;
+                        summaryBuilder.AppendLine($"- {role}: {truncatedContent}");
+                    }
+
+                    var automaticSummary = summaryBuilder.ToString().Trim();
+                    
+                    // Store the automatic summary in Azure AI Search
+                    await _chatHistoryService.UpdateContextSummaryAsync(sessionId, automaticSummary);
+                    
+                    Console.WriteLine($"✅ Automatic context summary created and stored for session {sessionId}");
+                    Console.WriteLine($"📝 Summary preview: {automaticSummary.Substring(0, Math.Min(100, automaticSummary.Length))}...");
+                }
+                else
+                {
+                    Console.WriteLine($"ℹ️ No automatic summary needed yet for session {sessionId} (need {MESSAGES_BEFORE_SUMMARY - (messageCount % MESSAGES_BEFORE_SUMMARY)} more messages)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ Error creating automatic summary for session {sessionId}: {ex.Message}");
+                // Don't throw - this is a background operation that shouldn't break the main flow
+            }
+        }
+
         private async Task<string> ReframeQuestionWithContextAsync(string question, string sessionId)
         {
             try
             {
-                // If no chat history or only 1 message, no need to reframe
-                var chatHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
-                if (chatHistory == null || chatHistory.Count <= 1)
+                // Use vector search to get semantically relevant chat history for question reframing
+                var relevantHistory = await _chatHistoryService.GetRelevantChatHistoryAsync(sessionId, question, 10);
+                if (relevantHistory == null || relevantHistory.Count <= 1)
                 {
                     return question;
                 }
 
                 Console.WriteLine($"🔄 AI-powered query rewriting for: '{question}'");
-                Console.WriteLine($"📊 Chat history contains {chatHistory.Count} messages");
+                Console.WriteLine($"📊 Retrieved {relevantHistory.Count} semantically relevant messages for reframing");
 
-                // Build chat history for the AI model
-                var chatHistoryForAI = BuildChatHistoryForQueryRewriting(chatHistory);
+                // Build chat history for the AI model using relevant messages
+                var chatHistoryForAI = BuildChatHistoryForQueryRewriting(relevantHistory);
                 
                 // Create the system instruction for query rewriting
                 var systemInstruction = @"You are a query rewriting expert. Based on the provided chat history, rephrase the current user question into a complete, standalone question that can be understood without the chat history.

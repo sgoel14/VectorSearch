@@ -26,7 +26,7 @@ namespace TransactionLabeler.API.Services
             _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.Add("api-key", _apiKey);
 
-            EnsureIndexesExistAsync().Wait(); // Ensure indexes are created on startup
+            EnsureIndexesExistAsync().Wait();
         }
 
         private async Task EnsureIndexesExistAsync()
@@ -266,6 +266,120 @@ namespace TransactionLabeler.API.Services
             }
         }
 
+        /// <summary>
+        /// Enhanced chat history retrieval using vector search for semantic relevance
+        /// </summary>
+        public async Task<List<ChatMessageInfo>> GetRelevantChatHistoryAsync(string sessionId, string currentQuery, int maxResults = 20)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 Getting semantically relevant chat history for session {sessionId} with query: {currentQuery}");
+                
+                // Get embedding for the current query to find relevant messages
+                var queryEmbedding = await GetEmbeddingAsync(currentQuery);
+                
+                // Escape single quotes in sessionId for OData filter
+                var escapedSessionId = sessionId.Replace("'", "''");
+                
+                // Create vector search query to find most relevant messages
+                var searchQuery = new
+                {
+                    vectorQueries = new[]
+                    {
+                        new
+                        {
+                            vector = queryEmbedding,
+                            k = maxResults * 2, // Get more results to filter by relevance
+                            fields = "contentVector",
+                            kind = "vector"
+                        }
+                    },
+                    filter = $"sessionId eq '{escapedSessionId}'",
+                    select = "id,content,role,timestamp,sessionId",
+                    top = maxResults * 2,
+                };
+
+                var searchUrl = $"{_endpoint}/indexes/{_chatMessagesIndex}/docs/search?api-version=2024-07-01";
+                var searchContent = new StringContent(JsonSerializer.Serialize(searchQuery), Encoding.UTF8, "application/json");
+                var jsonPayload = await searchContent.ReadAsStringAsync();
+                Console.WriteLine("--- SENDING THIS JSON PAYLOAD ---");
+                Console.WriteLine(jsonPayload);
+                Console.WriteLine("---------------------------------");
+                var response = await _httpClient.PostAsync(searchUrl, searchContent);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"❌ Vector search query failed: {response.StatusCode} - {await response.Content.ReadAsStringAsync()}");
+                    // Fallback to regular chat history if vector search fails
+                    Console.WriteLine("🔄 Falling back to regular chat history retrieval...");
+                    return await GetChatHistoryAsync(sessionId);
+                }
+
+                var searchResult = await response.Content.ReadAsStringAsync();
+                var searchResponse = JsonSerializer.Deserialize<AzureSearchResponse>(searchResult);
+                
+                var relevantMessages = new List<ChatMessageInfo>();
+                if (searchResponse?.Value != null)
+                {
+                    Console.WriteLine($"🔍 Found {searchResponse.Value.Count} semantically relevant messages");
+                    
+                    // Filter messages by relevance score (cosine similarity)
+                    var relevantThreshold = 0.7; // Only messages with 70%+ similarity
+                    var filteredMessages = new List<ChatMessageInfo>();
+                    
+                    foreach (var doc in searchResponse.Value)
+                    {
+                        // Check if the message is actually relevant
+                        if (doc.SearchScore.HasValue && doc.SearchScore.Value >= relevantThreshold)
+                        {
+                            if (DateTime.TryParse(doc.Timestamp, out var timestamp))
+                            {
+                                // Map the stored role string to AuthorRole enum
+                                AuthorRole role;
+                                switch (doc.Role.ToLower())
+                                {
+                                    case "user":
+                                        role = AuthorRole.User;
+                                        break;
+                                    case "assistant":
+                                        role = AuthorRole.Assistant;
+                                        break;
+                                    case "system":
+                                        role = AuthorRole.System;
+                                        break;
+                                    default:
+                                        role = AuthorRole.User;
+                                        break;
+                                }
+                                
+                                var message = new ChatMessageInfo(role, doc.Content) { Timestamp = timestamp };
+                                filteredMessages.Add(message);
+                                Console.WriteLine($"✅ Relevant message (score: {doc.SearchScore:F2}): {doc.Content.Substring(0, Math.Min(50, doc.Content.Length))}...");
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine($"❌ Irrelevant message (score: {doc.SearchScore:F2}): {doc.Content.Substring(0, Math.Min(50, doc.Content.Length))}...");
+                        }
+                    }
+                    
+                    relevantMessages = filteredMessages;
+                    Console.WriteLine($"🔍 Filtered to {relevantMessages.Count} truly relevant messages out of {searchResponse.Value.Count} total");
+                }
+
+                // Order by timestamp to maintain conversation flow
+                var orderedMessages = relevantMessages.OrderBy(m => m.Timestamp).ToList();
+                Console.WriteLine($"✅ Retrieved {orderedMessages.Count} semantically relevant messages for session {sessionId}");
+                return orderedMessages;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error retrieving relevant chat history: {ex.Message}");
+                // Fallback to regular chat history
+                Console.WriteLine("🔄 Falling back to regular chat history retrieval...");
+                return await GetChatHistoryAsync(sessionId);
+            }
+        }
+
         public async Task AddMessageAsync(string sessionId, ChatMessageInfo message)
         {
             try
@@ -285,8 +399,6 @@ namespace TransactionLabeler.API.Services
                     timestamp = message.Timestamp.ToString("O"),
                     contentVector = embedding
                 };
-
-                //Console.WriteLine($"📝 Document to index: {JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true })}");
 
                 // Index the document
                 var indexUrl = $"{_endpoint}/indexes/{_chatMessagesIndex}/docs/index?api-version=2024-07-01";
@@ -383,14 +495,14 @@ namespace TransactionLabeler.API.Services
                         new
                         {
                             vector = queryEmbedding,
-                            kNearestNeighborsCount = maxResults,
-                            fields = "contentVector"
+                            k = maxResults * 2, // Get more results to filter by relevance
+                            fields = "contentVector",
+                            kind = "vector"
                         }
                     },
                     filter = $"sessionId eq '{escapedSessionId}'",
                     select = "id,content,role,timestamp,sessionId",
-                    top = maxResults,
-                    orderby = "timestamp desc"
+                    top = maxResults * 2
                 };
 
                 var searchUrl = $"{_endpoint}/indexes/{_chatMessagesIndex}/docs/search?api-version=2024-07-01";
@@ -409,32 +521,48 @@ namespace TransactionLabeler.API.Services
                 var similarMessages = new List<ChatMessageInfo>();
                 if (searchResponse?.Value != null)
                 {
+                    // Filter messages by relevance score (cosine similarity)
+                    var relevantThreshold = 0.7; // Only messages with 70%+ similarity
+                    var filteredMessages = new List<ChatMessageInfo>();
+                    
                     foreach (var doc in searchResponse.Value)
                     {
-                        if (DateTime.TryParse(doc.Timestamp, out var timestamp))
+                        // Check if the message is actually relevant
+                        if (doc.SearchScore.HasValue && doc.SearchScore.Value >= relevantThreshold)
                         {
-                            // Map the stored role string to AuthorRole enum
-                            AuthorRole role;
-                            switch (doc.Role.ToLower())
+                            if (DateTime.TryParse(doc.Timestamp, out var timestamp))
                             {
-                                case "user":
-                                    role = AuthorRole.User;
-                                    break;
-                                case "assistant":
-                                    role = AuthorRole.Assistant;
-                                    break;
-                                case "system":
-                                    role = AuthorRole.System;
-                                    break;
-                                default:
-                                    role = AuthorRole.User;
-                                    break;
+                                // Map the stored role string to AuthorRole enum
+                                AuthorRole role;
+                                switch (doc.Role.ToLower())
+                                {
+                                    case "user":
+                                        role = AuthorRole.User;
+                                        break;
+                                    case "assistant":
+                                        role = AuthorRole.Assistant;
+                                        break;
+                                    case "system":
+                                        role = AuthorRole.System;
+                                        break;
+                                    default:
+                                        role = AuthorRole.User;
+                                        break;
+                                }
+                                
+                                var message = new ChatMessageInfo(role, doc.Content) { Timestamp = timestamp };
+                                filteredMessages.Add(message);
+                                Console.WriteLine($"✅ Relevant similar message (score: {doc.SearchScore:F2}): {doc.Content.Substring(0, Math.Min(50, doc.Content.Length))}...");
                             }
-                            
-                            var message = new ChatMessageInfo(role, doc.Content) { Timestamp = timestamp };
-                            similarMessages.Add(message);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"❌ Irrelevant similar message (score: {doc.SearchScore:F2}): {doc.Content.Substring(0, Math.Min(50, doc.Content.Length))}...");
                         }
                     }
+                    
+                    similarMessages = filteredMessages;
+                    Console.WriteLine($"🔍 Filtered to {similarMessages.Count} truly relevant similar messages out of {searchResponse.Value.Count} total");
                 }
 
                 Console.WriteLine($"✅ Found {similarMessages.Count} similar messages for query: {query}");
@@ -489,6 +617,88 @@ namespace TransactionLabeler.API.Services
             {
                 Console.WriteLine($"❌ Error retrieving context summary: {ex.Message}");
                 return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Enhanced context summary retrieval using vector search for semantic relevance
+        /// </summary>
+        public async Task<string> GetRelevantContextSummaryAsync(string sessionId, string currentQuery)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 Getting semantically relevant context summary for session {sessionId} with query: {currentQuery}");
+                
+                // Get embedding for the current query to find relevant summary
+                var queryEmbedding = await GetEmbeddingAsync(currentQuery);
+                
+                // Escape single quotes in sessionId for OData filter
+                var escapedSessionId = sessionId.Replace("'", "''");
+                
+                // Create vector search query to find most relevant summary
+                var searchQuery = new
+                {
+                    vectorQueries = new[]
+                    {
+                        new
+                        {
+                            vector = queryEmbedding,
+                            k = 3, // Get more results to filter by relevance
+                            fields = "contentVector",
+                            kind = "vector"
+                        }
+                    },
+                    filter = $"(sessionId eq '{escapedSessionId}') and (type eq 'summary')",
+                    select = "id,content,timestamp",
+                    top = 3
+                };
+
+                var searchUrl = $"{_endpoint}/indexes/{_chatSummariesIndex}/docs/search?api-version=2024-07-01";
+                var searchContent = new StringContent(JsonSerializer.Serialize(searchQuery), Encoding.UTF8, "application/json");
+                
+                var response = await _httpClient.PostAsync(searchUrl, searchContent);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"❌ Vector summary search failed: {response.StatusCode} - {await response.Content.ReadAsStringAsync()}");
+                    // Fallback to regular summary retrieval if vector search fails
+                    Console.WriteLine("🔄 Falling back to regular context summary retrieval...");
+                    return await GetContextSummaryAsync(sessionId);
+                }
+
+                var searchResult = await response.Content.ReadAsStringAsync();
+                var searchResponse = JsonSerializer.Deserialize<AzureSearchResponse>(searchResult);
+                
+                if (searchResponse?.Value?.Any() == true)
+                {
+                    // Filter summaries by relevance score (cosine similarity)
+                    var relevantThreshold = 0.7; // Only summaries with 70%+ similarity
+                    var relevantSummary = searchResponse.Value
+                        .Where(doc => doc.SearchScore.HasValue && doc.SearchScore.Value >= relevantThreshold)
+                        .OrderByDescending(doc => doc.SearchScore.Value)
+                        .FirstOrDefault();
+                    
+                    if (relevantSummary != null)
+                    {
+                        Console.WriteLine($"✅ Retrieved semantically relevant context summary (score: {relevantSummary.SearchScore:F2}) for session {sessionId}");
+                        return relevantSummary.Content ?? string.Empty;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"❌ No relevant context summary found (best score: {searchResponse.Value.Max(doc => doc.SearchScore ?? 0):F2})");
+                        return string.Empty;
+                    }
+                }
+
+                // If no vector search results, fallback to regular summary
+                Console.WriteLine("🔄 No vector search results, falling back to regular context summary retrieval...");
+                return await GetContextSummaryAsync(sessionId);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error retrieving relevant context summary: {ex.Message}");
+                // Fallback to regular summary retrieval
+                Console.WriteLine("🔄 Falling back to regular context summary retrieval...");
+                return await GetContextSummaryAsync(sessionId);
             }
         }
 
@@ -601,7 +811,7 @@ namespace TransactionLabeler.API.Services
         [JsonPropertyName("type")]
         public string Type { get; set; } = string.Empty;
         
-        // Azure AI Search metadata fields (ignored during deserialization)
+        // Azure AI Search metadata fields
         [JsonPropertyName("@search.score")]
         public double? SearchScore { get; set; }
         
