@@ -57,7 +57,7 @@ The Transaction Labeler API is an intelligent financial analysis system that com
 ### 2. **Advanced Chat System**
 - Persistent chat history with Azure AI Search
 - Vector-enabled context retrieval
-- Automatic context summarization
+- Automatic context summarization (every 5 messages)
 - Semantic relevance filtering
 
 ### 3. **Financial Tools & Functions**
@@ -295,8 +295,6 @@ The application will:
 - `POST /api/transactions/chat` - Process AI queries
 - `GET /api/transactions/chat-history/{sessionId}` - Get chat history
 - `DELETE /api/transactions/chat-history/{sessionId}` - Clear chat history
-- `POST /api/transactions/create-summary/{sessionId}` - Create manual summary
-- `GET /api/transactions/summary-stats/{sessionId}` - Get summary statistics
 
 ### Financial Analysis
 - `GET /api/transactions/categories` - Get expense categories
@@ -362,11 +360,13 @@ The system automatically reframes incomplete questions using chat history contex
 - Creates summaries every 5 messages automatically
 - Stores summaries with vector embeddings for semantic retrieval
 - Provides long-term conversation memory
+- No manual intervention required
 
 ### 3. **Intelligent Tool Selection**
 - Automatically chooses appropriate financial tools
 - Handles both financial and general knowledge queries
 - Provides comprehensive responses for non-financial questions
+- Seamless user experience without manual configuration
 
 ### 4. **Semantic Understanding**
 - Uses vector embeddings for semantic similarity

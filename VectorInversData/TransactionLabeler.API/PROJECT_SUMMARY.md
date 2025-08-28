@@ -92,7 +92,6 @@ We've successfully created an **Intelligent Financial Analysis System** that com
 - ✅ Added comprehensive financial analysis tools
 - ✅ Implemented secure SQL query execution
 - ✅ Added performance monitoring and logging
-- ✅ Created manual summary creation capabilities
 - ✅ Optimized vector search performance
 
 ## 🎯 Key Features Delivered
@@ -100,7 +99,7 @@ We've successfully created an **Intelligent Financial Analysis System** that com
 ### **1. Intelligent Chat System**
 - **Persistent Storage**: Chat history stored in Azure AI Search with vector embeddings
 - **Context Awareness**: AI understands conversation context across multiple turns
-- **Automatic Summarization**: Creates context summaries every 5 messages
+- **Automatic Summarization**: Creates context summaries every 5 messages automatically
 - **Semantic Retrieval**: Finds relevant chat history using vector similarity
 
 ### **2. Advanced Financial Analysis**

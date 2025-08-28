@@ -16,8 +16,6 @@ namespace TransactionLabeler.API.Services
         Task<List<object>> GetChatHistoryAsync(string sessionId);
         Task ClearChatHistoryAsync(string sessionId);
         Task<string> GetContextSummaryAsync(string sessionId);
-        Task<string> CreateManualSummaryAsync(string sessionId);
-        Task<object> GetSummaryStatsAsync(string sessionId);
     }
 
     public class SemanticKernelService : ISemanticKernelService
@@ -421,87 +419,9 @@ namespace TransactionLabeler.API.Services
             return _contextSummaries.TryGetValue(sessionId, out string? value) ? value : "No context available for this session.";
         }
 
-        public async Task<string> CreateManualSummaryAsync(string sessionId)
-        {
-            try
-            {
-                Console.WriteLine($"📝 Manually creating context summary for session {sessionId}");
-                
-                // Get current chat history
-                var chatHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
-                if (!chatHistory.Any())
-                {
-                    return "No chat history available to summarize.";
-                }
 
-                // Create a comprehensive summary
-                var summaryBuilder = new System.Text.StringBuilder();
-                summaryBuilder.AppendLine($"Manual Session Summary for {sessionId}:");
-                summaryBuilder.AppendLine($"Total Messages: {chatHistory.Count}");
-                summaryBuilder.AppendLine($"Session Duration: {chatHistory.First().Timestamp} to {chatHistory.Last().Timestamp}");
-                summaryBuilder.AppendLine();
-                summaryBuilder.AppendLine("Conversation Overview:");
-                
-                // Group messages by conversation turns
-                var conversationTurns = new List<string>();
-                for (int i = 0; i < chatHistory.Count; i += 2)
-                {
-                    if (i + 1 < chatHistory.Count)
-                    {
-                        var userMsg = chatHistory[i];
-                        var aiMsg = chatHistory[i + 1];
-                        var turn = $"Turn {(i/2) + 1}: User asked about '{userMsg.Content.Substring(0, Math.Min(80, userMsg.Content.Length))}...' → AI provided detailed response";
-                        conversationTurns.Add(turn);
-                    }
-                }
 
-                foreach (var turn in conversationTurns)
-                {
-                    summaryBuilder.AppendLine($"- {turn}");
-                }
 
-                var manualSummary = summaryBuilder.ToString().Trim();
-                
-                // Store the manual summary in Azure AI Search
-                await _chatHistoryService.UpdateContextSummaryAsync(sessionId, manualSummary);
-                
-                Console.WriteLine($"✅ Manual context summary created and stored for session {sessionId}");
-                return manualSummary;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Error creating manual summary for session {sessionId}: {ex.Message}");
-                return $"Error creating summary: {ex.Message}";
-            }
-        }
-
-        /// <summary>
-        /// Gets summary statistics for monitoring the automatic summary creation
-        /// </summary>
-        public async Task<object> GetSummaryStatsAsync(string sessionId)
-        {
-            try
-            {
-                var chatHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
-                var messageCount = chatHistory.Count;
-                var messagesUntilNextSummary = MESSAGES_BEFORE_SUMMARY - (messageCount % MESSAGES_BEFORE_SUMMARY);
-                
-                return new
-                {
-                    sessionId,
-                    totalMessages = messageCount,
-                    messagesUntilNextSummary = messagesUntilNextSummary == MESSAGES_BEFORE_SUMMARY ? 0 : messagesUntilNextSummary,
-                    nextSummaryAt = messageCount > 0 ? messageCount + messagesUntilNextSummary : MESSAGES_BEFORE_SUMMARY,
-                    summaryFrequency = MESSAGES_BEFORE_SUMMARY,
-                    hasSummary = !string.IsNullOrEmpty(await _chatHistoryService.GetContextSummaryAsync(sessionId))
-                };
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"⚠️ Error getting summary stats for session {sessionId}: {ex.Message}");
-                return new { error = ex.Message };
-            }
-        }
 
         private async Task UpdateContextSummaryAsync(string sessionId, string query, string response)
         {
