@@ -9,11 +9,7 @@ namespace TransactionLabeler.API.Services
 {
     public interface ITransactionService
     {
-        Task UpdateAllPersistentBankStatementEmbeddingsAsync(string connectionString);
         Task<float[]> GetEmbeddingAsync(string text);
-        Task<List<PersistentBankStatementLine>> GetAllPersistentBankStatementLinesWithEmbeddingsAsync();
-        Task<List<(Guid Id, string? Description, decimal? Amount, DateTime? TransactionDate, string? RgsCode, string? RgsDescription, string? RgsShortDescription, float Similarity)>> VectorSearchInSqlAsync(string connectionString, float[] queryEmbedding);
-        Task<List<PersistentBankStatementLine>> GetPersistentBankStatementLinesWithEmbeddingsPageAsync(int page, int pageSize);
         Task UpdateAllInversBankTransactionEmbeddingsAsync(string connectionString);
         
         // Essential methods needed by FinancialTools
@@ -25,6 +21,11 @@ namespace TransactionLabeler.API.Services
         Task<List<CategoryExpenseResult>> GetTopExpenseCategoriesFlexibleAsync(string connectionString, DateTime? startDate = null, DateTime? endDate = null, int? year = null, string? customerName = null, int topN = 5);
         Task<CategorySpendingResult> GetCategorySpendingAsync(string connectionString, string categoryQuery, DateTime? startDate = null, DateTime? endDate = null, int? year = null, string? customerName = null);
         Task<string> ExecuteCustomSQLQueryAsync(string sqlQuery, string connectionString);
+        
+        // Transaction monitoring and anomaly detection methods
+        Task<string> AnalyzeCounterpartyActivityAsync(string connectionString, int currentPeriodDays, int historicalPeriodDays, string? customerName, decimal? minAmount, decimal? maxAmount, string? transactionType);
+        Task<string> AnalyzeTransactionAnomaliesAsync(string connectionString, int periodDays, string? customerName, double thresholdMultiplier, string comparisonMethod, string? transactionType);
+        Task<string> GetTransactionProfilesAsync(string connectionString, int periodMonths, string? customerName, string? counterpartyAccount, string? transactionType, bool includeStatistics);
     }
 
     public class TransactionService : ITransactionService
@@ -38,43 +39,7 @@ namespace TransactionLabeler.API.Services
             _embeddingService = embeddingService;
         }
 
-        // Batch update embeddings for all rows in persistentbankstatementline
-        public async Task UpdateAllPersistentBankStatementEmbeddingsAsync(string connectionString)
-        {
-            const int pageSize = 200;
-            const int maxParallelism = 8; // Throttle to avoid Azure SQL resource limits
-            int page = 0;
-            List<PersistentBankStatementLine> batch;
 
-            do
-            {
-                batch = await _context.PersistentBankStatementLines
-                    .Where(x => x.Embedding == null)
-                    .OrderBy(x => x.Id)
-                    .Skip(page * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                using var semaphore = new SemaphoreSlim(maxParallelism);
-                await Task.WhenAll(batch.Select(async row =>
-                {
-                    await semaphore.WaitAsync();
-                    try
-                    {
-                        string textForEmbedding = $"{row.Description ?? ""} {row.Amount} {row.TransactionDate} {row.BankAccountName ?? ""} {row.BankAccountNumber ?? ""} {row.TransactionType ?? ""}";
-                        var embedding = await _embeddingService.GetEmbeddingAsync(textForEmbedding);
-                        // Update the embedding directly in the database
-                        await UpdateEmbeddingInDatabase(connectionString, row.Id, embedding);
-                    }
-                    finally
-                    {
-                        semaphore.Release();
-                    }
-                }));
-
-                page++;
-            } while (batch.Count == pageSize);
-        }
 
         // Batch update embeddings for all rows in inversbanktransaction
         public async Task UpdateAllInversBankTransactionEmbeddingsAsync(string connectionString)
@@ -84,44 +49,33 @@ namespace TransactionLabeler.API.Services
             int page = 0;
             while (true)
             {
-                // Join inversbanktransaction with rgsmapping to get rgsDescription and rgsShortDescription
-                // This ensures we use the semantic meaning (descriptions) rather than just codes for embeddings
-                var joinedBatch = await (from t in _context.InversBankTransactions
-                                        join r in _context.RgsMappings on t.RgsCode equals r.RgsCode into rgsJoin
-                                        from r in rgsJoin.DefaultIfEmpty()
-                                        where t.Embedding == null
-                                        orderby t.Id
-                                        select new
-                                        {
-                                            t.Id,
-                                            t.Description,
-                                            t.Amount,
-                                            t.TransactionDate,
-                                            t.CustomerName,
-                                            t.BankAccountName,
-                                            t.BankAccountNumber,
-                                            t.TransactionType,
-                                            t.RgsCode,
-                                            RgsDescription = r != null ? r.RgsDescription : "",
-                                            RgsShortDescription = r != null ? r.RgsShortDescription : ""
-                                        })
-                                        .Skip(page * pageSize)
-                                        .Take(pageSize)
-                                        .ToListAsync();
+                // Get batch of transactions that need embeddings
+                var batch = await _context.InversBankTransactions
+                    .Where(t => t.Embedding == null)
+                    .OrderBy(t => t.Id)
+                    .Skip(page * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync();
 
-                if (!joinedBatch.Any())
+                if (!batch.Any())
                     break;
 
                 using var semaphore = new SemaphoreSlim(maxParallelism);
-                await Task.WhenAll(joinedBatch.Select(async row =>
+                await Task.WhenAll(batch.Select(async transaction =>
                 {
                     await semaphore.WaitAsync();
                     try
                     {
-                        string textForEmbedding = $"{row.Description ?? ""} {row.Amount} {row.TransactionDate} {row.CustomerName ?? ""} {row.BankAccountName ?? ""} {row.BankAccountNumber ?? ""} {row.TransactionType ?? ""} {row.RgsCode ?? ""} {row.RgsDescription ?? ""} {row.RgsShortDescription ?? ""}";
+                        // Get RGS mapping for this transaction
+                        var rgsMapping = await _context.RgsMappings
+                            .Where(r => r.RgsCode == transaction.RgsCode)
+                            .FirstOrDefaultAsync();
+
+                        string textForEmbedding = $"{transaction.Description ?? ""} {transaction.Amount} {transaction.TransactionDate} {transaction.CustomerName ?? ""} {transaction.BankAccountName ?? ""} {transaction.BankAccountNumber ?? ""} {transaction.TransactionType ?? ""} {transaction.RgsCode ?? ""} {rgsMapping?.RgsDescription ?? ""} {rgsMapping?.RgsShortDescription ?? ""}";
                         var embedding = await _embeddingService.GetEmbeddingAsync(textForEmbedding);
-                        // Update the embedding directly in the database
-                        await UpdateEmbeddingInDatabase(connectionString, row.Id, embedding);
+                        
+                        // Update the embedding directly in the database using Entity Framework
+                        transaction.Embedding = JsonSerializer.Serialize(embedding);
                     }
                     finally
                     {
@@ -129,6 +83,8 @@ namespace TransactionLabeler.API.Services
                     }
                 }));
 
+                // Save all changes for this batch
+                await _context.SaveChangesAsync();
                 page++;
             }
         }
@@ -138,65 +94,7 @@ namespace TransactionLabeler.API.Services
             return await _embeddingService.GetEmbeddingAsync(text);
         }
 
-        public async Task<List<PersistentBankStatementLine>> GetAllPersistentBankStatementLinesWithEmbeddingsAsync()
-        {
-            return await _context.PersistentBankStatementLines
-                .Where(x => x.Embedding != null)
-                .ToListAsync();
-        }
 
-        public async Task<List<PersistentBankStatementLine>> GetPersistentBankStatementLinesWithEmbeddingsPageAsync(int page, int pageSize)
-        {
-            return await _context.PersistentBankStatementLines
-                .Where(x => x.Embedding != null)
-                .OrderBy(x => x.Id)
-                .Skip(page * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-        }
-
-        public async Task<List<(Guid Id, string? Description, decimal? Amount, DateTime? TransactionDate, string? RgsCode, string? RgsDescription, string? RgsShortDescription, float Similarity)>> VectorSearchInSqlAsync(string connectionString, float[] queryEmbedding)
-        {
-            var results = new List<(Guid Id, string? Description, decimal? Amount, DateTime? TransactionDate, string? RgsCode, string? RgsDescription, string? RgsShortDescription, float Similarity)>();
-
-            string sql = @"
-                SELECT TOP 20
-                    Id,
-                    Description,
-                    Amount,
-                    TransactionDate,
-                    RgsCode,
-                    RgsDescription,
-                    RgsShortDescription,
-                    CAST(Embedding AS VARCHAR(MAX)) AS EmbeddingString
-                FROM dbo.persistentbankstatementline
-                WHERE Embedding IS NOT NULL";
-
-            using var conn = new SqlConnection(connectionString);
-            using var cmd = new SqlCommand(sql, conn);
-            await conn.OpenAsync();
-            using var reader = await cmd.ExecuteReaderAsync();
-
-            while (await reader.ReadAsync())
-            {
-                var embeddingString = reader.GetString(7);
-                var embedding = JsonSerializer.Deserialize<float[]>(embeddingString);
-                var similarity = CalculateCosineSimilarity(queryEmbedding, embedding);
-
-                results.Add((
-                    reader.GetGuid(0),
-                    reader.IsDBNull(1) ? null : reader.GetString(1),
-                    reader.IsDBNull(2) ? 0 : reader.GetDecimal(2),
-                    reader.IsDBNull(3) ? DateTime.MinValue : reader.GetDateTime(3),
-                    reader.IsDBNull(4) ? null : reader.GetString(4),
-                    reader.IsDBNull(5) ? null : reader.GetString(5),
-                    reader.IsDBNull(6) ? null : reader.GetString(6),
-                    similarity
-                ));
-            }
-
-            return results.OrderByDescending(r => r.Similarity).ToList();
-        }
 
         private float CalculateCosineSimilarity(float[] vectorA, float[] vectorB)
         {
@@ -627,17 +525,7 @@ namespace TransactionLabeler.API.Services
             };
         }
 
-        // Helper method to update embeddings in the database
-        private async Task UpdateEmbeddingInDatabase(string connectionString, Guid id, float[] embedding)
-        {
-            string sql = "UPDATE dbo.persistentbankstatementline SET Embedding = @Embedding WHERE Id = @Id";
-            using var conn = new SqlConnection(connectionString);
-            using var cmd = new SqlCommand(sql, conn);
-            cmd.Parameters.AddWithValue("@Id", id);
-            cmd.Parameters.AddWithValue("@Embedding", JsonSerializer.Serialize(embedding));
-            await conn.OpenAsync();
-            await cmd.ExecuteNonQueryAsync();
-        }
+
 
         /// <summary>
         /// Execute custom SQL queries for complex financial analysis
@@ -718,6 +606,356 @@ namespace TransactionLabeler.API.Services
             }
 
             return output.ToString();
+        }
+
+        /// <summary>
+        /// Analyzes counterparty activity to detect unknown/new counterparties
+        /// </summary>
+        public async Task<string> AnalyzeCounterpartyActivityAsync(string connectionString, int currentPeriodDays, int historicalPeriodDays, string? customerName, decimal? minAmount, decimal? maxAmount, string? transactionType)
+        {
+            try
+            {
+                var currentPeriodEnd = DateTime.UtcNow;
+                var currentPeriodStart = currentPeriodEnd.AddDays(-currentPeriodDays);
+                var historicalPeriodEnd = currentPeriodStart;
+                var historicalPeriodStart = historicalPeriodEnd.AddDays(-historicalPeriodDays);
+
+                // Build customer filter
+                var customerFilter = string.IsNullOrEmpty(customerName) ? "" : $"AND CustomerName = '{customerName.Replace("'", "''")}'";
+                var amountFilter = "";
+                if (minAmount.HasValue || maxAmount.HasValue)
+                {
+                    if (minAmount.HasValue && maxAmount.HasValue)
+                        amountFilter = $"AND Amount BETWEEN {minAmount.Value} AND {maxAmount.Value}";
+                    else if (minAmount.HasValue)
+                        amountFilter = $"AND Amount >= {minAmount.Value}";
+                    else
+                        amountFilter = $"AND Amount <= {maxAmount.Value}";
+                }
+                var typeFilter = string.IsNullOrEmpty(transactionType) ? "" : $"AND af_bij = '{transactionType}'";
+
+                // Get historical counterparties (30-60 days ago)
+                var historicalCounterpartiesQuery = $@"
+                    SELECT DISTINCT BankAccountNumber
+                    FROM dbo.inversbanktransaction
+                    WHERE TransactionDate > '{historicalPeriodStart:yyyy-MM-dd}' 
+                        AND TransactionDate <= '{historicalPeriodEnd:yyyy-MM-dd}'
+                        {customerFilter}
+                        {amountFilter}
+                        {typeFilter}";
+
+                // Get current counterparties (last 30 days)
+                var currentCounterpartiesQuery = $@"
+                    SELECT DISTINCT BankAccountNumber
+                    FROM dbo.inversbanktransaction
+                    WHERE TransactionDate > '{currentPeriodStart:yyyy-MM-dd}' 
+                        AND TransactionDate <= '{currentPeriodEnd:yyyy-MM-dd}'
+                        {customerFilter}
+                        {amountFilter}
+                        {typeFilter}";
+
+                // Find unknown counterparties (in current but not in historical)
+                var unknownCounterpartiesQuery = $@"
+                    SELECT DISTINCT p.BankAccountNumber, p.CustomerName, p.TransactionDate, p.Amount, p.Description, p.af_bij
+                    FROM dbo.inversbanktransaction p
+                    WHERE p.TransactionDate > '{currentPeriodStart:yyyy-MM-dd}' 
+                        AND p.TransactionDate <= '{currentPeriodEnd:yyyy-MM-dd}'
+                        {customerFilter}
+                        {amountFilter}
+                        {typeFilter}
+                        AND p.BankAccountNumber NOT IN (
+                            SELECT DISTINCT BankAccountNumber
+                            FROM dbo.inversbanktransaction
+                            WHERE TransactionDate > '{historicalPeriodStart:yyyy-MM-dd}' 
+                                AND TransactionDate <= '{historicalPeriodEnd:yyyy-MM-dd}'
+                                {customerFilter}
+                                {amountFilter}
+                                {typeFilter}
+                        )
+                    ORDER BY p.TransactionDate DESC, p.Amount DESC";
+
+                using var conn = new SqlConnection(connectionString);
+                await conn.OpenAsync();
+
+                // Execute the unknown counterparties query
+                using var cmd = new SqlCommand(unknownCounterpartiesQuery, conn);
+                using var reader = await cmd.ExecuteReaderAsync();
+
+                var results = new List<Dictionary<string, object>>();
+                var columns = new List<string> { "BankAccountNumber", "CustomerName", "TransactionDate", "Amount", "Description", "TransactionType" };
+
+                while (await reader.ReadAsync())
+                {
+                    var row = new Dictionary<string, object>
+                    {
+                        ["BankAccountNumber"] = reader.IsDBNull(0) ? "" : reader.GetString(0),
+                        ["CustomerName"] = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                        ["TransactionDate"] = reader.IsDBNull(2) ? DateTime.MinValue : reader.GetDateTime(2),
+                        ["Amount"] = reader.IsDBNull(3) ? 0m : reader.GetDecimal(3),
+                        ["Description"] = reader.IsDBNull(4) ? "" : reader.GetString(4),
+                        ["TransactionType"] = reader.IsDBNull(5) ? "" : reader.GetString(5)
+                    };
+                    results.Add(row);
+                }
+
+                if (results.Count == 0)
+                {
+                    return $"🔍 **Counterparty Activity Analysis**\n\n" +
+                           $"**Periods:** Current: {currentPeriodDays} days, Historical: {historicalPeriodDays} days\n" +
+                           $"**Customer:** {customerName ?? "All"}\n" +
+                           $"**Result:** No unknown counterparties found in the current period.\n\n" +
+                           $"All counterparties in the current period were also active in the historical period.";
+                }
+
+                var formattedResults = FormatSQLResults(columns, results);
+                return $"🔍 **Counterparty Activity Analysis**\n\n" +
+                       $"**Periods:** Current: {currentPeriodDays} days, Historical: {historicalPeriodDays} days\n" +
+                       $"**Customer:** {customerName ?? "All"}\n" +
+                       $"**Unknown Counterparties Found:** {results.Count}\n\n" +
+                       $"**Unknown Counterparty Transactions:**\n\n{formattedResults}\n\n" +
+                       $"**Analysis:** These counterparties appeared in the current period but were not active in the historical period, indicating new or recently reactivated business relationships.";
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error analyzing counterparty activity: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Analyzes transaction anomalies by comparing current vs historical patterns
+        /// </summary>
+        public async Task<string> AnalyzeTransactionAnomaliesAsync(string connectionString, int periodDays, string? customerName, double thresholdMultiplier, string comparisonMethod, string? transactionType)
+        {
+            try
+            {
+                var currentPeriodEnd = DateTime.UtcNow;
+                var currentPeriodStart = currentPeriodEnd.AddDays(-periodDays);
+                var historicalPeriodEnd = currentPeriodStart;
+                var historicalPeriodStart = historicalPeriodEnd.AddMonths(-15); // 15 months of history
+
+                var customerFilter = string.IsNullOrEmpty(customerName) ? "" : $"AND CustomerName = '{customerName.Replace("'", "''")}'";
+                var typeFilter = string.IsNullOrEmpty(transactionType) ? "" : $"AND af_bij = '{transactionType}'";
+
+                // Get historical transaction profiles for all counterparties
+                var historicalProfilesQuery = $@"
+                    SELECT 
+                        BankAccountNumber,
+                        MAX(Amount) as HistoricalMaxAmount,
+                        MIN(Amount) as HistoricalMinAmount,
+                        AVG(Amount) as HistoricalAvgAmount,
+                        COUNT(*) as HistoricalTransactionCount
+                    FROM dbo.inversbanktransaction
+                    WHERE TransactionDate > '{historicalPeriodStart:yyyy-MM-dd}' 
+                        AND TransactionDate <= '{historicalPeriodEnd:yyyy-MM-dd}'
+                        {customerFilter}
+                        {typeFilter}
+                    GROUP BY BankAccountNumber
+                    HAVING COUNT(*) >= 3"; // Only counterparties with at least 3 historical transactions
+
+                // Get current period transactions
+                var currentTransactionsQuery = $@"
+                    SELECT 
+                        p.BankAccountNumber,
+                        p.CustomerName,
+                        p.TransactionDate,
+                        p.Amount,
+                        p.Description,
+                        p.af_bij,
+                        h.HistoricalMaxAmount,
+                        h.HistoricalMinAmount,
+                        h.HistoricalAvgAmount,
+                        h.HistoricalTransactionCount
+                    FROM dbo.inversbanktransaction p
+                    LEFT JOIN ({historicalProfilesQuery}) h ON p.BankAccountNumber = h.BankAccountNumber
+                    WHERE p.TransactionDate > '{currentPeriodStart:yyyy-MM-dd}' 
+                        AND p.TransactionDate <= '{currentPeriodEnd:yyyy-MM-dd}'
+                        {customerFilter}
+                        {typeFilter}
+                        AND h.BankAccountNumber IS NOT NULL
+                    ORDER BY p.TransactionDate DESC, p.Amount DESC";
+
+                using var conn = new SqlConnection(connectionString);
+                await conn.OpenAsync();
+
+                using var cmd = new SqlCommand(currentTransactionsQuery, conn);
+                using var reader = await cmd.ExecuteReaderAsync();
+
+                var results = new List<Dictionary<string, object>>();
+                var columns = new List<string> { "BankAccountNumber", "CustomerName", "TransactionDate", "Amount", "Description", "TransactionType", "HistoricalMax", "HistoricalMin", "HistoricalAvg", "AnomalyType" };
+
+                while (await reader.ReadAsync())
+                {
+                    var currentAmount = reader.GetDecimal(3);
+                    var historicalMax = reader.GetDecimal(7);
+                    var historicalMin = reader.GetDecimal(8);
+                    var historicalAvg = reader.GetDecimal(9);
+
+                    var anomalyType = "";
+                    if (currentAmount > historicalMax * (decimal)thresholdMultiplier)
+                        anomalyType = $"🚨 HIGH: {currentAmount:C} > {historicalMax * (decimal)thresholdMultiplier:C} ({thresholdMultiplier}x historical max)";
+                    else if (currentAmount < historicalMin / (decimal)thresholdMultiplier)
+                        anomalyType = $"🚨 LOW: {currentAmount:C} < {historicalMin / (decimal)thresholdMultiplier:C} ({thresholdMultiplier}x below historical min)";
+                    else if (currentAmount > historicalMax)
+                        anomalyType = $"⚠️ Above: {currentAmount:C} > {historicalMax:C} (historical max)";
+                    else if (currentAmount < historicalMin)
+                        anomalyType = $"⚠️ Below: {currentAmount:C} < {historicalMin:C} (historical min)";
+                    else
+                        anomalyType = "✅ Normal";
+
+                    var row = new Dictionary<string, object>
+                    {
+                        ["BankAccountNumber"] = reader.IsDBNull(0) ? "" : reader.GetString(0),
+                        ["CustomerName"] = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                        ["TransactionDate"] = reader.IsDBNull(2) ? DateTime.MinValue : reader.GetDateTime(2),
+                        ["Amount"] = currentAmount,
+                        ["Description"] = reader.IsDBNull(4) ? "" : reader.GetString(4),
+                        ["TransactionType"] = reader.IsDBNull(5) ? "" : reader.GetString(5),
+                        ["HistoricalMax"] = historicalMax,
+                        ["HistoricalMin"] = historicalMin,
+                        ["HistoricalAvg"] = historicalAvg,
+                        ["AnomalyType"] = anomalyType
+                    };
+                    results.Add(row);
+                }
+
+                if (results.Count == 0)
+                {
+                    return $"🚨 **Transaction Anomaly Analysis**\n\n" +
+                           $"**Period:** {periodDays} days\n" +
+                           $"**Customer:** {customerName ?? "All"}\n" +
+                           $"**Threshold:** {thresholdMultiplier}x normal\n" +
+                           $"**Result:** No transactions found for analysis.";
+                }
+
+                var formattedResults = FormatSQLResults(columns, results);
+                return $"🚨 **Transaction Anomaly Analysis**\n\n" +
+                       $"**Period:** {periodDays} days\n" +
+                       $"**Customer:** {customerName ?? "All"}\n" +
+                       $"**Threshold:** {thresholdMultiplier}x normal\n" +
+                       $"**Transactions Analyzed:** {results.Count}\n\n" +
+                       $"**Transaction Analysis Results:**\n\n{formattedResults}\n\n" +
+                       $"**Legend:**\n" +
+                       $"🚨 HIGH: Amount significantly above historical maximum\n" +
+                       $"🚨 LOW: Amount significantly below historical minimum\n" +
+                       $"⚠️ Above: Amount above historical maximum but within threshold\n" +
+                       $"⚠️ Below: Amount below historical minimum but within threshold\n" +
+                       $"✅ Normal: Amount within historical range";
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error analyzing transaction anomalies: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Gets transaction profiles and historical statistics for counterparties
+        /// </summary>
+        public async Task<string> GetTransactionProfilesAsync(string connectionString, int periodMonths, string? customerName, string? counterpartyAccount, string? transactionType, bool includeStatistics)
+        {
+            try
+            {
+                var periodEnd = DateTime.UtcNow;
+                var periodStart = periodEnd.AddMonths(-periodMonths);
+
+                var customerFilter = string.IsNullOrEmpty(customerName) ? "" : $"AND CustomerName = '{customerName.Replace("'", "''")}'";
+                var counterpartyFilter = string.IsNullOrEmpty(counterpartyAccount) ? "" : $"AND BankAccountNumber = '{counterpartyAccount.Replace("'", "''")}'";
+                var typeFilter = string.IsNullOrEmpty(transactionType) ? "" : $"AND af_bij = '{transactionType}'";
+
+                var query = $@"
+                    SELECT 
+                        BankAccountNumber,
+                        CustomerName,
+                        COUNT(*) as TransactionCount,
+                        SUM(Amount) as TotalAmount,
+                        AVG(Amount) as AverageAmount,
+                        MAX(Amount) as MaxAmount,
+                        MIN(Amount) as MinAmount,
+                        MAX(TransactionDate) as LastTransactionDate,
+                        MIN(TransactionDate) as FirstTransactionDate";
+
+                if (includeStatistics)
+                {
+                    query += @",
+                        STDEV(Amount) as AmountStandardDeviation,
+                        PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY Amount) OVER (PARTITION BY BankAccountNumber) as Amount95thPercentile,
+                        PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY Amount) OVER (PARTITION BY BankAccountNumber) as Amount5thPercentile";
+                }
+
+                query += $@"
+                    FROM dbo.inversbanktransaction
+                    WHERE TransactionDate > '{periodStart:yyyy-MM-dd}' 
+                        AND TransactionDate <= '{periodEnd:yyyy-MM-dd}'
+                        {customerFilter}
+                        {counterpartyFilter}
+                        {typeFilter}
+                    GROUP BY BankAccountNumber, CustomerName
+                    ORDER BY TotalAmount DESC, TransactionCount DESC";
+
+                using var conn = new SqlConnection(connectionString);
+                await conn.OpenAsync();
+
+                using var cmd = new SqlCommand(query, conn);
+                using var reader = await cmd.ExecuteReaderAsync();
+
+                var results = new List<Dictionary<string, object>>();
+                var columns = new List<string> { "BankAccountNumber", "CustomerName", "TransactionCount", "TotalAmount", "AverageAmount", "MaxAmount", "MinAmount", "LastTransactionDate", "FirstTransactionDate" };
+
+                if (includeStatistics)
+                {
+                    columns.AddRange(new[] { "AmountStdDev", "Amount95thPercentile", "Amount5thPercentile" });
+                }
+
+                while (await reader.ReadAsync())
+                {
+                    var row = new Dictionary<string, object>
+                    {
+                        ["BankAccountNumber"] = reader.IsDBNull(0) ? "" : reader.GetString(0),
+                        ["CustomerName"] = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                        ["TransactionCount"] = reader.IsDBNull(2) ? 0 : reader.GetInt32(2),
+                        ["TotalAmount"] = reader.IsDBNull(3) ? 0m : reader.GetDecimal(3),
+                        ["AverageAmount"] = reader.IsDBNull(4) ? 0m : reader.GetDecimal(4),
+                        ["MaxAmount"] = reader.IsDBNull(5) ? 0m : reader.GetDecimal(5),
+                        ["MinAmount"] = reader.IsDBNull(6) ? 0m : reader.GetDecimal(6),
+                        ["LastTransactionDate"] = reader.IsDBNull(7) ? DateTime.MinValue : reader.GetDateTime(7),
+                        ["FirstTransactionDate"] = reader.IsDBNull(8) ? DateTime.MinValue : reader.GetDateTime(8)
+                    };
+
+                    if (includeStatistics)
+                    {
+                        row["AmountStdDev"] = reader.IsDBNull(9) ? 0m : reader.GetDecimal(9);
+                        row["Amount95thPercentile"] = reader.IsDBNull(10) ? 0m : reader.GetDecimal(10);
+                        row["Amount5thPercentile"] = reader.IsDBNull(11) ? 0m : reader.GetDecimal(11);
+                    }
+
+                    results.Add(row);
+                }
+
+                if (results.Count == 0)
+                {
+                    return $"📊 **Transaction Profile Analysis**\n\n" +
+                           $"**Period:** {periodMonths} months\n" +
+                           $"**Customer:** {customerName ?? "All"}\n" +
+                           $"**Counterparty:** {counterpartyAccount ?? "All"}\n" +
+                           $"**Result:** No transaction profiles found for the specified criteria.";
+                }
+
+                var formattedResults = FormatSQLResults(columns, results);
+                return $"📊 **Transaction Profile Analysis**\n\n" +
+                       $"**Period:** {periodMonths} months\n" +
+                       $"**Customer:** {customerName ?? "All"}\n" +
+                       $"**Counterparty:** {counterpartyAccount ?? "All"}\n" +
+                       $"**Profiles Found:** {results.Count}\n" +
+                       $"**Statistics Included:** {includeStatistics}\n\n" +
+                       $"**Transaction Profiles:**\n\n{formattedResults}\n\n" +
+                       $"**Profile Summary:**\n" +
+                       $"• **Total Transactions:** {results.Sum(r => Convert.ToInt32(r["TransactionCount"]))}\n" +
+                       $"• **Total Amount:** {results.Sum(r => Convert.ToDecimal(r["TotalAmount"])):C}\n" +
+                       $"• **Average Transaction:** {results.Average(r => Convert.ToDecimal(r["AverageAmount"])):C}";
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error getting transaction profiles: {ex.Message}");
+            }
         }
     }
 }        

@@ -255,6 +255,11 @@ namespace TransactionLabeler.API.Services
             - FinancialTools.SearchCategories: Searches for relevant categories using vector similarity
             - FinancialTools.GetCategorySpending: Calculates total spending for specific categories
             - 🚀 FinancialTools.ExecuteReadOnlySQLQuery: Execute custom SQL queries for complex analysis
+            
+            🚨 TRANSACTION MONITORING & ANOMALY DETECTION TOOLS:
+            - FinancialTools.AnalyzeCounterpartyActivity: Detects unknown/new counterparties and analyzes counterparty activity patterns
+            - FinancialTools.AnalyzeTransactionAnomalies: Detects unusual transaction amounts by comparing current vs historical patterns
+            - FinancialTools.GetTransactionProfiles: Gets historical transaction patterns and statistics for counterparties
 
             🗄️ DATABASE SCHEMA FOR SQL GENERATION:
             You have access to these tables and can generate SQL queries:
@@ -285,7 +290,7 @@ namespace TransactionLabeler.API.Services
             - Complex joins: 'Show me all transactions with their RGS descriptions'
             - Date range analysis: 'Compare spending between Q1 and Q2 2025'
             - Statistical queries: 'What's the average transaction amount by month?'
-            - Unknown counterparty analysis: 'Find transactions to/from new/unusual bank accounts'
+            - Unknown counterparty analysis: 'Unknow counter party means the counter party bank accounts present in asked month but not present in historical transactions'
             - Pattern detection: 'Identify transactions that deviate from historical patterns'
             - Historical comparison: 'Compare current month transactions with previous months'
             
@@ -311,6 +316,12 @@ namespace TransactionLabeler.API.Services
             - User asks for expense analysis: 'top expenses for period Z', 'expense categories for customer A'
             - User asks for specific financial data from the system
             - User asks for real spending data: 'how much did Nova Creations spend on car repairs?'
+            
+            🚨 WHEN TO USE TRANSACTION MONITORING TOOLS:
+            - User asks about unknown/new counterparties: 'show me transactions from unknown accounts', 'find new bank accounts'
+            - User asks about unusual transactions: 'find transactions much larger than usual', 'detect unusual payment amounts'
+            - User asks about transaction patterns: 'get normal transaction amounts for counterparties', 'analyze historical spending patterns'
+            - User asks about transaction monitoring: 'are there large payments from unknown accounts?', 'find counterparties with unusual activity'
 
             WHEN NOT TO USE FINANCIAL TOOLS:
             - General knowledge questions: weather, geography, history, science, cooking, etc.

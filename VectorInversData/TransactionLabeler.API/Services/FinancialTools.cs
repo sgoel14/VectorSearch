@@ -164,5 +164,94 @@ namespace TransactionLabeler.API.Services
                 return $"❌ Error executing SQL query: {ex.Message}";
             }
         }
+
+        [KernelFunction, Description("🔍 FLEXIBLE COUNTERPARTY ACTIVITY ANALYSIS - Detects unknown/new counterparties and analyzes counterparty activity patterns. Use this for: 'Show me transactions from unknown counterparties', 'Find new bank accounts in the last month', 'Detect counterparties that appeared recently', 'Compare current vs historical counterparty activity'. Parameters: currentPeriodDays (default: 30), historicalPeriodDays (default: 30), customerName (optional), minAmount (optional), maxAmount (optional), transactionType (optional: 'Af' for expenses, 'Bij' for income, null for both).")]
+        public async Task<string> AnalyzeCounterpartyActivity(
+            int currentPeriodDays = 30,
+            int historicalPeriodDays = 30,
+            string? customerName = null,
+            decimal? minAmount = null,
+            decimal? maxAmount = null,
+            string? transactionType = null)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 Analyzing counterparty activity: Current={currentPeriodDays} days, Historical={historicalPeriodDays} days, Customer={customerName ?? "All"}, Amount Range={minAmount}-{maxAmount}, Type={transactionType ?? "Both"}");
+
+                var results = await _transactionService.AnalyzeCounterpartyActivityAsync(
+                    _connectionString,
+                    currentPeriodDays,
+                    historicalPeriodDays,
+                    customerName,
+                    minAmount,
+                    maxAmount,
+                    transactionType);
+
+                return results;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error analyzing counterparty activity: {ex.Message}");
+                return $"❌ Error analyzing counterparty activity: {ex.Message}";
+            }
+        }
+
+        [KernelFunction, Description("🚨 FLEXIBLE TRANSACTION ANOMALY DETECTION - Detects unusual transaction amounts and patterns. Use this for: 'Find transactions much larger than usual', 'Detect unusual payment amounts', 'Find transactions outside normal ranges', 'Identify suspicious transaction patterns'. Parameters: periodDays (default: 30), customerName (optional), thresholdMultiplier (default: 2.0 for 2x normal), comparisonMethod (default: 'amount' for amount-based, 'frequency' for frequency-based), transactionType (optional: 'Af' for expenses, 'Bij' for income, null for both).")]
+        public async Task<string> AnalyzeTransactionAnomalies(
+            int periodDays = 30,
+            string? customerName = null,
+            double thresholdMultiplier = 2.0,
+            string comparisonMethod = "amount",
+            string? transactionType = null)
+        {
+            try
+            {
+                Console.WriteLine($"🚨 Analyzing transaction anomalies: Period={periodDays} days, Customer={customerName ?? "All"}, Threshold={thresholdMultiplier}x, Method={comparisonMethod}, Type={transactionType ?? "Both"}");
+
+                var results = await _transactionService.AnalyzeTransactionAnomaliesAsync(
+                    _connectionString,
+                    periodDays,
+                    customerName,
+                    thresholdMultiplier,
+                    comparisonMethod,
+                    transactionType);
+
+                return results;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error analyzing transaction anomalies: {ex.Message}");
+                return $"❌ Error analyzing transaction anomalies: {ex.Message}";
+            }
+        }
+
+        [KernelFunction, Description("📊 FLEXIBLE TRANSACTION PROFILE ANALYSIS - Gets historical transaction patterns and statistics for counterparties. Use this for: 'Get normal transaction amounts for counterparties', 'Analyze historical spending patterns', 'Find transaction profiles for monitoring', 'Calculate historical statistics'. Parameters: periodMonths (default: 15), customerName (optional), counterpartyAccount (optional: specific bank account), transactionType (optional: 'Af' for expenses, 'Bij' for income, null for both), includeStatistics (default: true for detailed stats, false for basic info).")]
+        public async Task<string> GetTransactionProfiles(
+            int periodMonths = 15,
+            string? customerName = null,
+            string? counterpartyAccount = null,
+            string? transactionType = null,
+            bool includeStatistics = true)
+        {
+            try
+            {
+                Console.WriteLine($"📊 Getting transaction profiles: Period={periodMonths} months, Customer={customerName ?? "All"}, Counterparty={counterpartyAccount ?? "All"}, Type={transactionType ?? "Both"}, Stats={includeStatistics}");
+
+                var results = await _transactionService.GetTransactionProfilesAsync(
+                    _connectionString,
+                    periodMonths,
+                    customerName,
+                    counterpartyAccount,
+                    transactionType,
+                    includeStatistics);
+
+                return results;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error getting transaction profiles: {ex.Message}");
+                return $"❌ Error getting transaction profiles: {ex.Message}";
+            }
+        }
     }
 }

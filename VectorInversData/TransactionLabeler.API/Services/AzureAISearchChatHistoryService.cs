@@ -323,7 +323,7 @@ namespace TransactionLabeler.API.Services
                     Console.WriteLine($"🔍 Found {searchResponse.Value.Count} semantically relevant messages");
                     
                     // Filter messages by relevance score (cosine similarity)
-                    var relevantThreshold = 0.7; // Only messages with 70%+ similarity
+                    var relevantThreshold = 0.75; // Only messages with 70%+ similarity
                     var filteredMessages = new List<ChatMessageInfo>();
                     
                     foreach (var doc in searchResponse.Value)

@@ -10,25 +10,7 @@ namespace TransactionLabeler.API.Controllers
         private readonly ITransactionService _transactionService = transactionService;
         private readonly IConfiguration _configuration = configuration;
 
-        [HttpPost("update-all-persistent-embeddings")]
-        public async Task<IActionResult> UpdateAllPersistentBankStatementEmbeddings()
-        {
-            try
-            {
-                string? connectionString = _configuration.GetConnectionString("DefaultConnection");
-                if (string.IsNullOrEmpty(connectionString))
-                {
-                    return BadRequest(new { error = "Database connection string not configured" });
-                }
-                
-                await _transactionService.UpdateAllPersistentBankStatementEmbeddingsAsync(connectionString);
-                return Ok(new { status = "Batch embedding update triggered." });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { error = $"Database operation failed: {ex.Message}" });
-            }
-        }
+
 
         [HttpPost("update-all-invers-embeddings")]
         public async Task<IActionResult> UpdateAllInversBankTransactionEmbeddings(IConfiguration _configuration)
