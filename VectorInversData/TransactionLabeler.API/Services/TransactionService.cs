@@ -9,7 +9,6 @@ namespace TransactionLabeler.API.Services
 {
     public interface ITransactionService
     {
-        Task<float[]> GetEmbeddingAsync(string text);
         Task UpdateAllInversBankTransactionEmbeddingsAsync(string connectionString);
         
         // Essential methods needed by FinancialTools
@@ -47,35 +46,43 @@ namespace TransactionLabeler.API.Services
             const int pageSize = 200;
             const int maxParallelism = 8; // Throttle to avoid Azure SQL resource limits
             int page = 0;
-            while (true)
-            {
-                // Get batch of transactions that need embeddings
-                var batch = await _context.InversBankTransactions
-                    .Where(t => t.Embedding == null)
-                    .OrderBy(t => t.Id)
-                    .Skip(page * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
+            List<InversBankTransaction> batch;
 
-                if (!batch.Any())
-                    break;
+            do
+            {
+                // Join inversbanktransaction with rgsmapping to get rgsDescription and rgsShortDescription
+                batch = await (from t in _context.InversBankTransactions
+                              join r in _context.RgsMappings on t.RgsCode equals r.RgsCode into rgsJoin
+                              from rgs in rgsJoin.DefaultIfEmpty()
+                              where t.ContentEmbedding == null || t.AmountEmbedding == null || t.DateEmbedding == null || t.CategoryEmbedding == null || t.CombinedEmbedding == null
+                              orderby t.Id
+                              select new InversBankTransaction
+                              {
+                                  Id = t.Id,
+                                  Description = t.Description,
+                                  Amount = t.Amount,
+                                  TransactionDate = t.TransactionDate,
+                                  BankAccountName = t.BankAccountName,
+                                  BankAccountNumber = t.BankAccountNumber,
+                                  TransactionType = t.TransactionType,
+                                  RgsCode = t.RgsCode,
+                                  // For embedding text
+                                  CategoryName = rgs.RgsDescription,
+                                  BusinessId = rgs.RgsShortDescription
+                              })
+                              .Skip(page * pageSize)
+                              .Take(pageSize)
+                              .ToListAsync();
 
                 using var semaphore = new SemaphoreSlim(maxParallelism);
-                await Task.WhenAll(batch.Select(async transaction =>
+                await Task.WhenAll(batch.Select(async row =>
                 {
                     await semaphore.WaitAsync();
                     try
                     {
-                        // Get RGS mapping for this transaction
-                        var rgsMapping = await _context.RgsMappings
-                            .Where(r => r.RgsCode == transaction.RgsCode)
-                            .FirstOrDefaultAsync();
-
-                        string textForEmbedding = $"{transaction.Description ?? ""} {transaction.Amount} {transaction.TransactionDate} {transaction.CustomerName ?? ""} {transaction.BankAccountName ?? ""} {transaction.BankAccountNumber ?? ""} {transaction.TransactionType ?? ""} {transaction.RgsCode ?? ""} {rgsMapping?.RgsDescription ?? ""} {rgsMapping?.RgsShortDescription ?? ""}";
-                        var embedding = await _embeddingService.GetEmbeddingAsync(textForEmbedding);
-                        
-                        // Update the embedding directly in the database using Entity Framework
-                        transaction.Embedding = JsonSerializer.Serialize(embedding);
+                        // Generate specialized embeddings for different query types
+                        var embeddings = await GenerateSpecializedEmbeddingsAsync(row);
+                        await InsertMultipleEmbeddingsAsync(connectionString, row.Id, embeddings);
                     }
                     finally
                     {
@@ -83,39 +90,56 @@ namespace TransactionLabeler.API.Services
                     }
                 }));
 
-                // Save all changes for this batch
-                await _context.SaveChangesAsync();
                 page++;
-            }
+            } while (batch.Count == pageSize);
         }
 
-        public async Task<float[]> GetEmbeddingAsync(string text)
+        public static async Task InsertMultipleEmbeddingsAsync(string connectionString, Guid id, Dictionary<string, float[]> embeddings)
         {
-            return await _embeddingService.GetEmbeddingAsync(text);
-        }
+            using var conn = new SqlConnection(connectionString);
+            await conn.OpenAsync();
 
-
-
-        private float CalculateCosineSimilarity(float[] vectorA, float[] vectorB)
-        {
-            if (vectorA.Length != vectorB.Length)
-                return 0;
-
-            float dotProduct = 0;
-            float normA = 0;
-            float normB = 0;
-
-            for (int i = 0; i < vectorA.Length; i++)
+            foreach (var kvp in embeddings)
             {
-                dotProduct += vectorA[i] * vectorB[i];
-                normA += vectorA[i] * vectorA[i];
-                normB += vectorB[i] * vectorB[i];
+                // For VECTOR columns, we need to cast the JSON array to VECTOR type
+                string embeddingJson = "[" + string.Join(",", kvp.Value.Select(f => f.ToString(CultureInfo.InvariantCulture))) + "]";
+                string safeEmbeddingJson = embeddingJson.Replace("'", "''");
+                
+                // Use CAST to convert JSON array to VECTOR type
+                string sql = $"UPDATE dbo.inversbanktransaction SET {kvp.Key} = CAST('{safeEmbeddingJson}' AS VECTOR({kvp.Value.Length})) WHERE id = @id";
+                using var cmd = new SqlCommand(sql, conn);
+                cmd.Parameters.AddWithValue("@id", id);
+                await cmd.ExecuteNonQueryAsync();
             }
+        }
 
-            if (normA == 0 || normB == 0)
-                return 0;
+        private async Task<Dictionary<string, float[]>> GenerateSpecializedEmbeddingsAsync(InversBankTransaction row)
+        {
+            var embeddings = new Dictionary<string, float[]>();
 
-            return dotProduct / (float)(Math.Sqrt(normA) * Math.Sqrt(normB));
+            // 1. Content Embedding (for description-based queries)
+            string contentText = $"{row.Description ?? ""} {row.CategoryName ?? ""} {row.BusinessId ?? ""}";
+            embeddings["ContentEmbedding"] = await _embeddingService.GetEmbeddingAsync(contentText);
+
+            // 2. Amount Embedding (for amount-based queries)
+            string amountText = $"amount {row.Amount} currency money payment transaction value financial";
+            embeddings["AmountEmbedding"] = await _embeddingService.GetEmbeddingAsync(amountText);
+
+            // 3. Date Embedding (for temporal queries)
+            string dateText = row.TransactionDate.HasValue
+                ? $"date {row.TransactionDate.Value:yyyy-MM-dd} month {row.TransactionDate.Value:MMMM} year {row.TransactionDate.Value:yyyy} day {row.TransactionDate.Value:dd} weekday {row.TransactionDate.Value:dddd}"
+                : "date unknown";
+            embeddings["DateEmbedding"] = await _embeddingService.GetEmbeddingAsync(dateText);
+
+            // 4. Category Embedding (for category-based queries)
+            string categoryText = $"category {row.RgsCode ?? ""} {row.CategoryName ?? ""} {row.BusinessId ?? ""} type {row.TransactionType ?? ""}";
+            embeddings["CategoryEmbedding"] = await _embeddingService.GetEmbeddingAsync(categoryText);
+
+            // 5. Combined Embedding (for general semantic search)
+            string combinedText = $"{contentText} {amountText} {dateText} {categoryText}";
+            embeddings["CombinedEmbedding"] = await _embeddingService.GetEmbeddingAsync(combinedText);
+
+            return embeddings;
         }
 
         // New category-based transaction search methods - works for ANY category mentioned in the query
