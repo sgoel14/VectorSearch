@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Import - Transaction Labeler</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="file"], input[type="text"], input[type="checkbox"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        input[type="checkbox"] {
+            width: auto;
+            margin-right: 10px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .progress {
+            margin-top: 20px;
+            display: none;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #007bff;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .csv-format {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+        .csv-format h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        .csv-format code {
+            background-color: #e9ecef;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 CSV Transaction Import</h1>
+        
+        <div class="csv-format">
+            <h3>📋 Expected CSV Format</h3>
+            <p>Your CSV file should have the following columns (in any order):</p>
+            <code>amount,bankaccountname,bankaccountnumber,description,transactiondate,transactiontype,transactionidentifier_accountnumber,code,af_bij,rgsCode,naceId,categoryId,categoryName</code>
+            <p><strong>Note:</strong> The first row should contain headers. Supported date formats: <code>yyyy-MM-dd</code>, <code>yyyy-MM-ddTHH:mm:ss</code>, <code>dd-MM-yyyy</code>, <code>dd/MM/yyyy</code>, etc.</p>
+        </div>
+
+        <form id="csvImportForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="csvFile">📁 Select CSV File:</label>
+                <input type="file" id="csvFile" name="csvFile" accept=".csv" required>
+            </div>
+
+            <div class="form-group">
+                <label for="customerName">🏢 Customer Name (optional):</label>
+                <input type="text" id="customerName" name="customerName" placeholder="e.g., Nova Creations">
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="skipValidation" name="skipValidation">
+                    ⚠️ Skip validation (not recommended)
+                </label>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="generateEmbeddings" name="generateEmbeddings" checked>
+                    🤖 Generate embeddings for semantic search
+                </label>
+            </div>
+
+            <button type="submit" id="submitBtn">🚀 Import CSV</button>
+        </form>
+
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
+            <h3 style="color: #333; margin-bottom: 15px;">🤖 Additional Tools</h3>
+            <button type="button" id="updateEmbeddingsBtn" style="background-color: #28a745; width: 100%; margin-bottom: 10px;">Update Embeddings for Account</button>
+            <button type="button" id="updateAllEmbeddingsBtn" style="background-color: #dc3545; width: 100%;">Update All Embeddings</button>
+        </div>
+
+        <div class="progress" id="progress">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <p id="progressText">Uploading and processing...</p>
+        </div>
+
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        document.getElementById('csvImportForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            const csvFile = document.getElementById('csvFile').files[0];
+            const customerName = document.getElementById('customerName').value;
+            const skipValidation = document.getElementById('skipValidation').checked;
+            const generateEmbeddings = document.getElementById('generateEmbeddings').checked;
+            
+            if (!csvFile) {
+                showResult('Please select a CSV file.', 'error');
+                return;
+            }
+            
+            formData.append('csvFile', csvFile);
+            if (customerName) formData.append('customerName', customerName);
+            formData.append('skipValidation', skipValidation);
+            formData.append('generateEmbeddings', generateEmbeddings);
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const progress = document.getElementById('progress');
+            const result = document.getElementById('result');
+            
+            // Show progress
+            submitBtn.disabled = true;
+            progress.style.display = 'block';
+            result.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/transactions/import-csv', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult(`
+                        <h3>✅ Import Successful!</h3>
+                        <p><strong>Total Rows:</strong> ${data.result.totalRows}</p>
+                        <p><strong>Successfully Imported:</strong> ${data.result.successfullyImported}</p>
+                        <p><strong>Failed Rows:</strong> ${data.result.failedRows}</p>
+                        <p><strong>Processing Time:</strong> ${data.result.processingTime}</p>
+                        ${data.result.errors.length > 0 ? `<p><strong>Errors:</strong></p><ul>${data.result.errors.map(e => `<li>${e}</li>`).join('')}</ul>` : ''}
+                        ${data.result.warnings.length > 0 ? `<p><strong>Warnings:</strong></p><ul>${data.result.warnings.map(w => `<li>${w}</li>`).join('')}</ul>` : ''}
+                    `, 'success');
+                } else {
+                    showResult(`❌ Import Failed: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                progress.style.display = 'none';
+            }
+        });
+        
+        function showResult(message, type) {
+            const result = document.getElementById('result');
+            result.innerHTML = message;
+            result.className = `result ${type}`;
+            result.style.display = 'block';
+        }
+
+        // Additional tools functionality
+        document.getElementById('updateEmbeddingsBtn').addEventListener('click', function() {
+            window.open('/update-embeddings.html', '_blank');
+        });
+
+        document.getElementById('updateAllEmbeddingsBtn').addEventListener('click', async function() {
+            if (!confirm('⚠️ This will update embeddings for ALL transactions in the database. This may take a long time. Are you sure you want to continue?')) {
+                return;
+            }
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const progress = document.getElementById('progress');
+            const result = document.getElementById('result');
+            
+            // Show progress
+            submitBtn.disabled = true;
+            progress.style.display = 'block';
+            result.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/transactions/update-all-invers-embeddings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult(`
+                        <h3>✅ All Embeddings Update Started!</h3>
+                        <p><strong>Status:</strong> ${data.status}</p>
+                        <p><strong>Note:</strong> This is a background operation that may take several minutes to complete.</p>
+                    `, 'success');
+                } else {
+                    showResult(`❌ Update Failed: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                progress.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

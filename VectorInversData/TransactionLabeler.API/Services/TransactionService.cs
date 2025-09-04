@@ -10,6 +10,7 @@ namespace TransactionLabeler.API.Services
     public interface ITransactionService
     {
         Task UpdateAllInversBankTransactionEmbeddingsAsync(string connectionString);
+        Task UpdateEmbeddingsForAccountAsync(string connectionString, string transactionIdentifierAccountNumber);
         
         // Essential methods needed by FinancialTools
         Task<List<CategorySearchResult>> SearchCategoriesByVectorAsync(string connectionString, string categoryQuery, int topCategories = 5, string? customerName = null);
@@ -25,6 +26,10 @@ namespace TransactionLabeler.API.Services
         Task<string> AnalyzeCounterpartyActivityAsync(string connectionString, int currentPeriodDays, int historicalPeriodDays, string? customerName, decimal? minAmount, decimal? maxAmount, string? transactionType);
         Task<string> AnalyzeTransactionAnomaliesAsync(string connectionString, int periodDays, string? customerName, double thresholdMultiplier, string comparisonMethod, string? transactionType);
         Task<string> GetTransactionProfilesAsync(string connectionString, int periodMonths, string? customerName, string? counterpartyAccount, string? transactionType, bool includeStatistics);
+        
+        // Customer name validation and suggestion methods
+        Task<CustomerNameValidationResult> ValidateCustomerNameAsync(string connectionString, string? customerName);
+        Task<List<string>> GetAvailableCustomerNamesAsync(string connectionString, int limit = 50);
     }
 
     public class TransactionService : ITransactionService
@@ -73,6 +78,65 @@ namespace TransactionLabeler.API.Services
                               .Skip(page * pageSize)
                               .Take(pageSize)
                               .ToListAsync();
+
+                using var semaphore = new SemaphoreSlim(maxParallelism);
+                await Task.WhenAll(batch.Select(async row =>
+                {
+                    await semaphore.WaitAsync();
+                    try
+                    {
+                        // Generate specialized embeddings for different query types
+                        var embeddings = await GenerateSpecializedEmbeddingsAsync(row);
+                        await InsertMultipleEmbeddingsAsync(connectionString, row.Id, embeddings);
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                }));
+
+                page++;
+            } while (batch.Count == pageSize);
+        }
+
+        public async Task UpdateEmbeddingsForAccountAsync(string connectionString, string transactionIdentifierAccountNumber)
+        {
+            const int pageSize = 1500;
+            const int maxParallelism = 20; // Lower parallelism for targeted updates
+            int page = 0;
+            List<InversBankTransaction> batch;
+
+            do
+            {
+                // Get transactions for the specific account that need embedding updates
+                batch = await (from t in _context.InversBankTransactions
+                              join r in _context.RgsMappings on t.RgsCode equals r.RgsCode into rgsJoin
+                              from rgs in rgsJoin.DefaultIfEmpty()
+                              where t.TransactionIdentifierAccountNumber == transactionIdentifierAccountNumber
+                                    && (t.ContentEmbedding == null || t.AmountEmbedding == null || t.DateEmbedding == null || t.CategoryEmbedding == null || t.CombinedEmbedding == null)
+                              orderby t.Id
+                              select new InversBankTransaction
+                              {
+                                  Id = t.Id,
+                                  Description = t.Description,
+                                  Amount = t.Amount,
+                                  TransactionDate = t.TransactionDate,
+                                  BankAccountName = t.BankAccountName,
+                                  BankAccountNumber = t.BankAccountNumber,
+                                  TransactionType = t.TransactionType,
+                                  RgsCode = t.RgsCode,
+                                  TransactionIdentifierAccountNumber = t.TransactionIdentifierAccountNumber,
+                                  CustomerName = t.CustomerName,
+                                  // For embedding text
+                                  CategoryName = rgs.RgsDescription,
+                                  BusinessId = rgs.RgsShortDescription
+                              })
+                    .Skip(page * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync();
+
+                if (!batch.Any())
+                    break;
 
                 using var semaphore = new SemaphoreSlim(maxParallelism);
                 await Task.WhenAll(batch.Select(async row =>
@@ -183,7 +247,7 @@ namespace TransactionLabeler.API.Services
             using var conn = new SqlConnection(connectionString);
             using var cmd = new SqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("@TopCategories", topCategories);
-            cmd.CommandTimeout = 20; // 20 second timeout for database operations
+            cmd.CommandTimeout = 120; // 120 second timeout for database operations
 
             foreach (var param in parameters)
             {
@@ -644,7 +708,7 @@ namespace TransactionLabeler.API.Services
                 var historicalPeriodEnd = currentPeriodStart;
                 var historicalPeriodStart = historicalPeriodEnd.AddDays(-historicalPeriodDays);
 
-                // Build customer filter
+                // Build filters
                 var customerFilter = string.IsNullOrEmpty(customerName) ? "" : $"AND CustomerName = '{customerName.Replace("'", "''")}'";
                 var amountFilter = "";
                 if (minAmount.HasValue || maxAmount.HasValue)
@@ -658,27 +722,7 @@ namespace TransactionLabeler.API.Services
                 }
                 var typeFilter = string.IsNullOrEmpty(transactionType) ? "" : $"AND af_bij = '{transactionType}'";
 
-                // Get historical counterparties (30-60 days ago)
-                var historicalCounterpartiesQuery = $@"
-                    SELECT DISTINCT BankAccountNumber
-                    FROM dbo.inversbanktransaction
-                    WHERE TransactionDate > '{historicalPeriodStart:yyyy-MM-dd}' 
-                        AND TransactionDate <= '{historicalPeriodEnd:yyyy-MM-dd}'
-                        {customerFilter}
-                        {amountFilter}
-                        {typeFilter}";
-
-                // Get current counterparties (last 30 days)
-                var currentCounterpartiesQuery = $@"
-                    SELECT DISTINCT BankAccountNumber
-                    FROM dbo.inversbanktransaction
-                    WHERE TransactionDate > '{currentPeriodStart:yyyy-MM-dd}' 
-                        AND TransactionDate <= '{currentPeriodEnd:yyyy-MM-dd}'
-                        {customerFilter}
-                        {amountFilter}
-                        {typeFilter}";
-
-                // Find unknown counterparties (in current but not in historical)
+                // Find unknown counterparties (in current period but not in historical period)
                 var unknownCounterpartiesQuery = $@"
                     SELECT DISTINCT p.BankAccountNumber, p.CustomerName, p.TransactionDate, p.Amount, p.Description, p.af_bij
                     FROM dbo.inversbanktransaction p
@@ -701,7 +745,6 @@ namespace TransactionLabeler.API.Services
                 using var conn = new SqlConnection(connectionString);
                 await conn.OpenAsync();
 
-                // Execute the unknown counterparties query
                 using var cmd = new SqlCommand(unknownCounterpartiesQuery, conn);
                 using var reader = await cmd.ExecuteReaderAsync();
 
@@ -802,6 +845,7 @@ namespace TransactionLabeler.API.Services
                 await conn.OpenAsync();
 
                 using var cmd = new SqlCommand(currentTransactionsQuery, conn);
+                cmd.CommandTimeout = 120; // 60 second timeout for complex queries
                 using var reader = await cmd.ExecuteReaderAsync();
 
                 var results = new List<Dictionary<string, object>>();
@@ -810,9 +854,9 @@ namespace TransactionLabeler.API.Services
                 while (await reader.ReadAsync())
                 {
                     var currentAmount = reader.GetDecimal(3);
-                    var historicalMax = reader.GetDecimal(7);
-                    var historicalMin = reader.GetDecimal(8);
-                    var historicalAvg = reader.GetDecimal(9);
+                    var historicalMax = reader.GetDecimal(6);
+                    var historicalMin = reader.GetDecimal(7);
+                    var historicalAvg = reader.GetDecimal(8);
 
                     var anomalyType = "";
                     if (currentAmount > historicalMax * (decimal)thresholdMultiplier)
@@ -981,5 +1025,162 @@ namespace TransactionLabeler.API.Services
                 throw new Exception($"Error getting transaction profiles: {ex.Message}");
             }
         }
+
+        /// <summary>
+        /// Validates customer name and suggests corrections if misspelled
+        /// </summary>
+        public async Task<CustomerNameValidationResult> ValidateCustomerNameAsync(string connectionString, string? customerName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(customerName))
+                {
+                    return new CustomerNameValidationResult
+                    {
+                        IsValid = true,
+                        Message = "No customer name provided - will search all customers"
+                    };
+                }
+
+                // First, try exact match
+                var exactMatchQuery = @"
+                    SELECT DISTINCT CustomerName 
+                    FROM dbo.inversbanktransaction 
+                    WHERE CustomerName = @CustomerName";
+
+                using var conn = new SqlConnection(connectionString);
+                await conn.OpenAsync();
+
+                using var exactCmd = new SqlCommand(exactMatchQuery, conn);
+                exactCmd.Parameters.AddWithValue("@CustomerName", customerName);
+                
+                var exactMatch = await exactCmd.ExecuteScalarAsync();
+                if (exactMatch != null)
+                {
+                    return new CustomerNameValidationResult
+                    {
+                        IsValid = true,
+                        CorrectedName = exactMatch.ToString(),
+                        Message = "Customer name found exactly"
+                    };
+                }
+
+                // If no exact match, try fuzzy matching
+                var fuzzyMatchQuery = @"
+                    SELECT DISTINCT CustomerName,
+                        CASE 
+                            WHEN CustomerName LIKE @Pattern1 THEN 0.9
+                            WHEN CustomerName LIKE @Pattern2 THEN 0.8
+                            WHEN CustomerName LIKE @Pattern3 THEN 0.7
+                            WHEN SOUNDEX(CustomerName) = SOUNDEX(@CustomerName) THEN 0.6
+                            ELSE 0.5
+                        END as SimilarityScore
+                    FROM dbo.inversbanktransaction 
+                    WHERE CustomerName LIKE @Pattern1 
+                       OR CustomerName LIKE @Pattern2 
+                       OR CustomerName LIKE @Pattern3
+                       OR SOUNDEX(CustomerName) = SOUNDEX(@CustomerName)
+                    ORDER BY SimilarityScore DESC";
+
+                using var fuzzyCmd = new SqlCommand(fuzzyMatchQuery, conn);
+                fuzzyCmd.Parameters.AddWithValue("@CustomerName", customerName);
+                fuzzyCmd.Parameters.AddWithValue("@Pattern1", $"{customerName}%"); // Starts with
+                fuzzyCmd.Parameters.AddWithValue("@Pattern2", $"%{customerName}%"); // Contains
+                fuzzyCmd.Parameters.AddWithValue("@Pattern3", $"%{customerName}"); // Ends with
+
+                using var reader = await fuzzyCmd.ExecuteReaderAsync();
+                var suggestions = new List<string>();
+                string? bestMatch = null;
+                double bestScore = 0;
+
+                while (await reader.ReadAsync())
+                {
+                    var suggestedName = reader.GetString(0);
+                    var score = Convert.ToDouble(reader.GetDecimal(1));
+                    
+                    suggestions.Add(suggestedName);
+                    
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestMatch = suggestedName;
+                    }
+                }
+
+                if (bestMatch != null && bestScore >= 0.6)
+                {
+                    return new CustomerNameValidationResult
+                    {
+                        IsValid = false,
+                        CorrectedName = bestMatch,
+                        Suggestions = suggestions.Take(5).ToList(),
+                        SimilarityScore = bestScore,
+                        Message = $"Customer name '{customerName}' not found. Did you mean '{bestMatch}'? Here are similar names: {string.Join(", ", suggestions.Take(3))}"
+                    };
+                }
+
+                // If no good fuzzy matches, get all available customer names
+                var allCustomers = await GetAvailableCustomerNamesAsync(connectionString, 10);
+                
+                return new CustomerNameValidationResult
+                {
+                    IsValid = false,
+                    Suggestions = allCustomers,
+                    Message = $"Customer name '{customerName}' not found. Available customers: {string.Join(", ", allCustomers.Take(5))}"
+                };
+            }
+            catch (Exception ex)
+            {
+                return new CustomerNameValidationResult
+                {
+                    IsValid = false,
+                    Message = $"Error validating customer name: {ex.Message}"
+                };
+            }
+        }
+
+        /// <summary>
+        /// Gets all available customer names from the database
+        /// </summary>
+        public async Task<List<string>> GetAvailableCustomerNamesAsync(string connectionString, int limit = 50)
+        {
+            try
+            {
+                var query = $@"
+                    SELECT DISTINCT CustomerName 
+                    FROM dbo.inversbanktransaction 
+                    WHERE CustomerName IS NOT NULL AND CustomerName != ''
+                    ORDER BY CustomerName
+                    {(limit > 0 ? $"OFFSET 0 ROWS FETCH NEXT {limit} ROWS ONLY" : "")}";
+
+                using var conn = new SqlConnection(connectionString);
+                await conn.OpenAsync();
+
+                using var cmd = new SqlCommand(query, conn);
+                using var reader = await cmd.ExecuteReaderAsync();
+
+                var customers = new List<string>();
+                while (await reader.ReadAsync())
+                {
+                    customers.Add(reader.GetString(0));
+                }
+
+                return customers;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error getting available customer names: {ex.Message}");
+            }
+        }
+    }
+
+    // Customer name validation result model
+    public class CustomerNameValidationResult
+    {
+        public bool IsValid { get; set; }
+        public string? CorrectedName { get; set; }
+        public List<string> Suggestions { get; set; } = new();
+        public string? Message { get; set; }
+        public double SimilarityScore { get; set; }
     }
 }        

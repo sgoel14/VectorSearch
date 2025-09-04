@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using TransactionLabeler.API.Services;
+using TransactionLabeler.API.Models;
 
 namespace TransactionLabeler.API.Controllers
 {
@@ -18,6 +19,31 @@ namespace TransactionLabeler.API.Controllers
             string connectionString = _configuration.GetConnectionString("DefaultConnection");
             await _transactionService.UpdateAllInversBankTransactionEmbeddingsAsync(connectionString);
             return Ok(new { status = "Batch embedding update for inversbanktransaction triggered." });
+        }
+
+        [HttpPost("update-embeddings-for-account")]
+        public async Task<IActionResult> UpdateEmbeddingsForAccount([FromBody] UpdateEmbeddingsRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.TransactionIdentifierAccountNumber))
+                {
+                    return BadRequest(new { error = "TransactionIdentifierAccountNumber is required" });
+                }
+
+                string connectionString = _configuration.GetConnectionString("DefaultConnection");
+                await _transactionService.UpdateEmbeddingsForAccountAsync(connectionString, request.TransactionIdentifierAccountNumber);
+                
+                return Ok(new { 
+                    status = "Embedding update completed successfully",
+                    transactionIdentifierAccountNumber = request.TransactionIdentifierAccountNumber,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = $"Failed to update embeddings: {ex.Message}" });
+            }
         }
 
         [HttpPost("intelligent-query-with-tools")]
@@ -220,6 +246,54 @@ namespace TransactionLabeler.API.Controllers
                 return BadRequest(new { error = ex.Message });
             }
         }
+
+        [HttpPost("import-csv")]
+        public async Task<IActionResult> ImportCsvTransactions([FromForm] CsvImportRequest request)
+        {
+            try
+            {
+                // Validate file
+                if (request.CsvFile == null || request.CsvFile.Length == 0)
+                {
+                    return BadRequest(new { error = "CSV file is required" });
+                }
+
+                // Check file size (limit to 10MB)
+                if (request.CsvFile.Length > 10 * 1024 * 1024)
+                {
+                    return BadRequest(new { error = "CSV file size cannot exceed 10MB" });
+                }
+
+                // Check file extension
+                var fileExtension = Path.GetExtension(request.CsvFile.FileName).ToLowerInvariant();
+                if (fileExtension != ".csv")
+                {
+                    return BadRequest(new { error = "Only CSV files are allowed" });
+                }
+
+                // Get CSV import service
+                var csvImportService = HttpContext.RequestServices.GetRequiredService<ICsvImportService>();
+
+                // Import the CSV data
+                using var stream = request.CsvFile.OpenReadStream();
+                var result = await csvImportService.ImportTransactionsFromCsvAsync(
+                    stream, 
+                    request.CustomerName, 
+                    request.SkipValidation, 
+                    request.GenerateEmbeddings);
+
+                return Ok(new
+                {
+                    message = "CSV import completed",
+                    result = result,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = $"CSV import failed: {ex.Message}" });
+            }
+        }
     }
 
 
@@ -246,6 +320,11 @@ namespace TransactionLabeler.API.Controllers
     {
         public string Query { get; set; } = "";
         public string? SessionId { get; set; }
+    }
+
+    public class UpdateEmbeddingsRequest
+    {
+        public string TransactionIdentifierAccountNumber { get; set; } = "";
     }
 
 

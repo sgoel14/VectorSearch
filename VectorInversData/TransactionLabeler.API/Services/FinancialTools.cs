@@ -196,7 +196,7 @@ namespace TransactionLabeler.API.Services
             }
         }
 
-        [KernelFunction, Description("🚨 FLEXIBLE TRANSACTION ANOMALY DETECTION - Detects unusual transaction amounts and patterns. Use this for: 'Find transactions much larger than usual', 'Detect unusual payment amounts', 'Find transactions outside normal ranges', 'Identify suspicious transaction patterns'. Parameters: periodDays (default: 30), customerName (optional), thresholdMultiplier (default: 2.0 for 2x normal), comparisonMethod (default: 'amount' for amount-based, 'frequency' for frequency-based), transactionType (optional: 'Af' for expenses, 'Bij' for income, null for both).")]
+        [KernelFunction, Description("🚨 FLEXIBLE TRANSACTION ANOMALY DETECTION - Detects unusual transaction amounts and patterns. Use this for: 'Find transactions much larger than usual', 'Large payments or receipts from known/unknown accounts', 'Detect unusual payment amounts', 'Find transactions outside normal ranges', 'Identify suspicious transaction patterns'. Parameters: periodDays (default: 30), customerName (optional), thresholdMultiplier (default: 2.0 for 2x normal), comparisonMethod (default: 'amount' for amount-based, 'frequency' for frequency-based), transactionType (optional: 'Af' for expenses, 'Bij' for income, null for both).")]
         public async Task<string> AnalyzeTransactionAnomalies(
             int periodDays = 30,
             string? customerName = null,
@@ -251,6 +251,42 @@ namespace TransactionLabeler.API.Services
             {
                 Console.WriteLine($"❌ Error getting transaction profiles: {ex.Message}");
                 return $"❌ Error getting transaction profiles: {ex.Message}";
+            }
+        }
+
+        [KernelFunction, Description("🔍 CUSTOMER NAME VALIDATION - Validates customer names and suggests corrections for misspellings. Use this when the user provides a customer name that might be misspelled. This function will check if the customer exists and suggest similar names if not found. Parameters: customerName (the name to validate).")]
+        public async Task<string> ValidateCustomerName(string customerName)
+        {
+            try
+            {
+                Console.WriteLine($"🔍 Validating customer name: '{customerName}'");
+
+                var validationResult = await _transactionService.ValidateCustomerNameAsync(_connectionString, customerName);
+
+                if (validationResult.IsValid)
+                {
+                    return $"✅ **Customer Name Validation**\n\n" +
+                           $"**Customer:** {validationResult.CorrectedName ?? customerName}\n" +
+                           $"**Status:** {validationResult.Message}\n\n" +
+                           $"The customer name is valid and exists in the system.";
+                }
+                else
+                {
+                    var suggestionsText = validationResult.Suggestions.Any() 
+                        ? $"**Suggestions:** {string.Join(", ", validationResult.Suggestions.Take(5))}"
+                        : "No similar names found.";
+
+                    return $"❌ **Customer Name Validation**\n\n" +
+                           $"**Provided Name:** {customerName}\n" +
+                           $"**Status:** {validationResult.Message}\n\n" +
+                           $"{suggestionsText}\n\n" +
+                           $"**Note:** Please correct the customer name and try again. You can use the suggested names above or check the available customers.";
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error validating customer name: {ex.Message}");
+                return $"❌ Error validating customer name: {ex.Message}";
             }
         }
     }

@@ -40,6 +40,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // Add services
 builder.Services.AddSingleton<IEmbeddingService, EmbeddingService>();
 builder.Services.AddSingleton<ITransactionService, TransactionService>();
+builder.Services.AddScoped<ICsvImportService, CsvImportService>();
 builder.Services.AddSingleton<IChatHistoryService>(provider =>
     new AzureAISearchChatHistoryService(
         provider.GetRequiredService<IConfiguration>(),
