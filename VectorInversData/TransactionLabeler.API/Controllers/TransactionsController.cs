@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using TransactionLabeler.API.Services;
+using TransactionLabeler.API.Models;
 
 namespace TransactionLabeler.API.Controllers
 {
@@ -10,25 +11,7 @@ namespace TransactionLabeler.API.Controllers
         private readonly ITransactionService _transactionService = transactionService;
         private readonly IConfiguration _configuration = configuration;
 
-        [HttpPost("update-all-persistent-embeddings")]
-        public async Task<IActionResult> UpdateAllPersistentBankStatementEmbeddings()
-        {
-            try
-            {
-                string? connectionString = _configuration.GetConnectionString("DefaultConnection");
-                if (string.IsNullOrEmpty(connectionString))
-                {
-                    return BadRequest(new { error = "Database connection string not configured" });
-                }
-                
-                await _transactionService.UpdateAllPersistentBankStatementEmbeddingsAsync(connectionString);
-                return Ok(new { status = "Batch embedding update triggered." });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { error = $"Database operation failed: {ex.Message}" });
-            }
-        }
+
 
         [HttpPost("update-all-invers-embeddings")]
         public async Task<IActionResult> UpdateAllInversBankTransactionEmbeddings(IConfiguration _configuration)
@@ -36,6 +19,31 @@ namespace TransactionLabeler.API.Controllers
             string connectionString = _configuration.GetConnectionString("DefaultConnection");
             await _transactionService.UpdateAllInversBankTransactionEmbeddingsAsync(connectionString);
             return Ok(new { status = "Batch embedding update for inversbanktransaction triggered." });
+        }
+
+        [HttpPost("update-embeddings-for-account")]
+        public async Task<IActionResult> UpdateEmbeddingsForAccount([FromBody] UpdateEmbeddingsRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.TransactionIdentifierAccountNumber))
+                {
+                    return BadRequest(new { error = "TransactionIdentifierAccountNumber is required" });
+                }
+
+                string connectionString = _configuration.GetConnectionString("DefaultConnection");
+                await _transactionService.UpdateEmbeddingsForAccountAsync(connectionString, request.TransactionIdentifierAccountNumber);
+                
+                return Ok(new { 
+                    status = "Embedding update completed successfully",
+                    transactionIdentifierAccountNumber = request.TransactionIdentifierAccountNumber,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = $"Failed to update embeddings: {ex.Message}" });
+            }
         }
 
         [HttpPost("intelligent-query-with-tools")]
@@ -82,12 +90,12 @@ namespace TransactionLabeler.API.Controllers
         }
 
         [HttpGet("chat-history/{sessionId}")]
-        public ActionResult<object> GetChatHistory(string sessionId)
+        public async Task<ActionResult<object>> GetChatHistory(string sessionId)
         {
             try
             {
                 var semanticKernelService = HttpContext.RequestServices.GetRequiredService<ISemanticKernelService>();
-                var chatHistory = semanticKernelService.GetChatHistory(sessionId);
+                var chatHistory = await semanticKernelService.GetChatHistoryAsync(sessionId);
                 return Ok(new
                 {
                     sessionId,
@@ -100,6 +108,8 @@ namespace TransactionLabeler.API.Controllers
                 return BadRequest(new { error = $"Error retrieving chat history: {ex.Message}" });
             }
         }
+
+
 
         [HttpDelete("chat-history/{sessionId}")]
         public async Task<IActionResult> ClearChatHistory(string sessionId)
@@ -236,6 +246,54 @@ namespace TransactionLabeler.API.Controllers
                 return BadRequest(new { error = ex.Message });
             }
         }
+
+        [HttpPost("import-csv")]
+        public async Task<IActionResult> ImportCsvTransactions([FromForm] CsvImportRequest request)
+        {
+            try
+            {
+                // Validate file
+                if (request.CsvFile == null || request.CsvFile.Length == 0)
+                {
+                    return BadRequest(new { error = "CSV file is required" });
+                }
+
+                // Check file size (limit to 10MB)
+                if (request.CsvFile.Length > 10 * 1024 * 1024)
+                {
+                    return BadRequest(new { error = "CSV file size cannot exceed 10MB" });
+                }
+
+                // Check file extension
+                var fileExtension = Path.GetExtension(request.CsvFile.FileName).ToLowerInvariant();
+                if (fileExtension != ".csv")
+                {
+                    return BadRequest(new { error = "Only CSV files are allowed" });
+                }
+
+                // Get CSV import service
+                var csvImportService = HttpContext.RequestServices.GetRequiredService<ICsvImportService>();
+
+                // Import the CSV data
+                using var stream = request.CsvFile.OpenReadStream();
+                var result = await csvImportService.ImportTransactionsFromCsvAsync(
+                    stream, 
+                    request.CustomerName, 
+                    request.SkipValidation, 
+                    request.GenerateEmbeddings);
+
+                return Ok(new
+                {
+                    message = "CSV import completed",
+                    result = result,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = $"CSV import failed: {ex.Message}" });
+            }
+        }
     }
 
 
@@ -262,6 +320,11 @@ namespace TransactionLabeler.API.Controllers
     {
         public string Query { get; set; } = "";
         public string? SessionId { get; set; }
+    }
+
+    public class UpdateEmbeddingsRequest
+    {
+        public string TransactionIdentifierAccountNumber { get; set; } = "";
     }
 
 

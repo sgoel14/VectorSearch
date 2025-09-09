@@ -13,7 +13,7 @@ namespace TransactionLabeler.API.Services
     public interface ISemanticKernelService
     {
         Task<string> ProcessIntelligentQueryWithAdvancedFeaturesAsync(string connectionString, string query, string? sessionId = null);
-        List<object> GetChatHistory(string sessionId);
+        Task<List<object>> GetChatHistoryAsync(string sessionId);
         Task ClearChatHistoryAsync(string sessionId);
         Task<string> GetContextSummaryAsync(string sessionId);
     }
@@ -26,14 +26,16 @@ namespace TransactionLabeler.API.Services
         private readonly Dictionary<string, List<ChatMessageInfo>> _chatHistory;
         private readonly Dictionary<string, string> _contextSummaries;
         private readonly IConfiguration _configuration;
+        private readonly IChatHistoryService _chatHistoryService;
+        private const int MESSAGES_BEFORE_SUMMARY = 5; // Create summary every 5 messages (2.5 conversation turns)
 
 
-
-        public SemanticKernelService(ITransactionService transactionService, string connectionString, IConfiguration configuration)
+        public SemanticKernelService(ITransactionService transactionService, string connectionString, IConfiguration configuration, IChatHistoryService chatHistoryService)
         {
             _transactionService = transactionService;
             _connectionString = connectionString;
             _configuration = configuration;
+            _chatHistoryService = chatHistoryService;
             _chatHistory = new Dictionary<string, List<ChatMessageInfo>>();
             _contextSummaries = new Dictionary<string, string>();
             
@@ -65,51 +67,27 @@ namespace TransactionLabeler.API.Services
                     Console.WriteLine($"🆔 Using existing session ID: {sessionId}");
                 }
 
-                // Get or create chat history for this session
-                Console.WriteLine($"🔍 Checking _chatHistory dictionary:");
-                Console.WriteLine($"   Dictionary contains {_chatHistory.Count} sessions");
-                Console.WriteLine($"   Session keys: [{string.Join(", ", _chatHistory.Keys)}]");
-                Console.WriteLine($"   Looking for session: {sessionId}");
-                Console.WriteLine($"   ContainsKey result: {_chatHistory.ContainsKey(sessionId)}");
-                
-                if (!_chatHistory.ContainsKey(sessionId))
-                {
-                    _chatHistory[sessionId] = new List<ChatMessageInfo>();
-                    Console.WriteLine($"📝 Created new chat history for session: {sessionId}");
-                }
-                else
-                {
-                    Console.WriteLine($"📝 Found existing chat history for session: {sessionId} with {_chatHistory[sessionId].Count} messages");
-                }
-
-                // Log current chat history state
-                var currentHistory = _chatHistory[sessionId];
-                Console.WriteLine($"🔍 Current chat history for session {sessionId}:");
-                foreach (var msg in currentHistory)
-                {
-                    Console.WriteLine($"   {msg.Role}: {msg.Content.Substring(0, Math.Min(100, msg.Content.Length))}...");
-                }
-
-                // Add user message to chat history
+                // Add user message to Azure AI Search
                 var userMessage = new ChatMessageInfo(AuthorRole.User, query);
-                currentHistory.Add(userMessage);
-                Console.WriteLine($"✅ Added user message to chat history: '{query}'");
-
-                // Log updated chat history count
-                Console.WriteLine($"📊 Chat history now contains {currentHistory.Count} messages");
+                await _chatHistoryService.AddMessageAsync(sessionId, userMessage);
+                Console.WriteLine($"✅ Added user message to Azure AI Search: '{query}'");
 
                 // Let Semantic Kernel intelligently decide which tools to use
                 Console.WriteLine($"🤖 Processing query intelligently: {query}");
-                var result = await ProcessQueryIntelligentlyAsync(connectionString, query, sessionId, currentHistory);
+                var result = await ProcessQueryIntelligentlyAsync(connectionString, query, sessionId);
                 
-                // Add AI response to chat history
+                // Add AI response to Azure AI Search
                 var aiMessage = new ChatMessageInfo(AuthorRole.Assistant, result);
-                currentHistory.Add(aiMessage);
-                Console.WriteLine($"✅ Added AI response to chat history: '{result.Substring(0, Math.Min(100, result.Length))}...'");
+                await _chatHistoryService.AddMessageAsync(sessionId, aiMessage);
+                Console.WriteLine($"✅ Added AI response to Azure AI Search: '{result.Substring(0, Math.Min(100, result.Length))}...'");
 
-                // Log final chat history state
-                Console.WriteLine($"📊 Final chat history for session {sessionId} contains {currentHistory.Count} messages:");
-                foreach (var msg in currentHistory)
+                // Check if we should create an automatic context summary
+                await CheckAndCreateAutomaticSummaryAsync(sessionId);
+
+                // Log final chat history state from Azure AI Search
+                var finalHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
+                Console.WriteLine($"📊 Final chat history for session {sessionId} contains {finalHistory.Count} messages:");
+                foreach (var msg in finalHistory)
                 {
                     Console.WriteLine($"   {msg.Role}: {msg.Content.Substring(0, Math.Min(100, msg.Content.Length))}...");
                 }
@@ -123,33 +101,22 @@ namespace TransactionLabeler.API.Services
             }
         }
 
-        private async Task<string> ProcessQueryIntelligentlyAsync(string connectionString, string query, string sessionId, List<ChatMessageInfo> chatHistory)
+        private async Task<string> ProcessQueryIntelligentlyAsync(string connectionString, string query, string sessionId)
         {
             Console.WriteLine($"🚀 ProcessQueryIntelligentlyAsync called with:");
             Console.WriteLine($"   Query: '{query}'");
-            foreach (var msg in chatHistory)
-            {
-                Console.WriteLine($"     {msg.Role}: {msg.Content[..Math.Min(100, msg.Content.Length)]}...");
-            }
             
             try
             {
                 // Apply AI-powered context-aware question reframing FIRST for general questions
-                var reframedQuestion = await ReframeQuestionWithContextAsync(query, chatHistory);
+                var reframedQuestion = await ReframeQuestionWithContextAsync(query, sessionId);
                 if (reframedQuestion != query)
                 {
-                    Console.WriteLine($"�� Context Reframing: '{query}' → '{reframedQuestion}'");
+                    Console.WriteLine($" Context Reframing: '{query}' → '{reframedQuestion}'");
                     query = reframedQuestion; // Use the reframed question
                     
-                    // CRITICAL: Update the chat history with the reframed question for future context analysis
-                    if (chatHistory.Count != 0)
-                    {
-                        var lastUserMessage = chatHistory.LastOrDefault(m => m.Role == AuthorRole.User);
-                        if (lastUserMessage != null)
-                        {
-                            lastUserMessage.Content = reframedQuestion; // Update with reframed version
-                        }
-                    }
+                                         // CRITICAL: Update the chat history with the reframed question for future context analysis
+                     // Note: The reframed question will be used for this query, but we don't update previous messages
                 }
                 
                 // Check if FinancialTools plugin is already imported
@@ -197,7 +164,7 @@ namespace TransactionLabeler.API.Services
                     var responseContent = result.ToString();
 
                     // Add assistant response to chat history
-                    chatHistory.Add(new ChatMessageInfo(AuthorRole.Assistant, responseContent ?? "No response generated."));
+                    await _chatHistoryService.AddMessageAsync(sessionId, new ChatMessageInfo(AuthorRole.Assistant, responseContent ?? "No response generated."));
 
                     // Update context summary for long-term RAG
                     await UpdateContextSummaryAsync(sessionId, query, responseContent ?? "");
@@ -224,48 +191,51 @@ namespace TransactionLabeler.API.Services
                 new(AuthorRole.System, GetSystemPrompt())
             };
 
-            // Add recent chat history for context window management (last 5 messages to reduce token count)
-            if (_chatHistory.TryGetValue(sessionId, out List<ChatMessageInfo>? value))
+            // Use vector search to get semantically relevant chat history instead of just recent messages
+            var relevantHistory = await _chatHistoryService.GetRelevantChatHistoryAsync(sessionId, currentQuery, 8);
+            if (relevantHistory.Any())
             {
-                var recentHistory = value.TakeLast(5); // Reduced from 10 to 5
-                foreach (var message in recentHistory)
+                Console.WriteLine($"🔍 Retrieved {relevantHistory.Count} semantically relevant messages for context");
+                foreach (var message in relevantHistory)
                 {
                     // Truncate long messages to reduce token count
                     var truncatedContent = message.Content.Length > 500 ? message.Content.Substring(0, 500) + "..." : message.Content;
                     chatHistory.Add(new ChatMessageContent(message.Role, truncatedContent));
                 }
                 
-                // Add condensed enhanced context from chat history (shorter version)
-                if (recentHistory.Any())
+                // Add condensed enhanced context from relevant chat history
+                if (relevantHistory.Any())
                 {
-                    var enhancedContext = await ContextBuilder.BuildCondensedContextFromHistoryAsync(recentHistory, currentQuery);
+                    var enhancedContext = await ContextBuilder.BuildCondensedContextFromHistoryAsync(relevantHistory, currentQuery);
                     if (!string.IsNullOrEmpty(enhancedContext))
                     {
-                        Console.WriteLine($"🔍 Built context from history: {enhancedContext}");
+                        Console.WriteLine($"🔍 Built context from relevant history: {enhancedContext}");
                         chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Context: {enhancedContext}"));
                     }
-                    
-
                 }
             }
 
-            // Add condensed context summary if available (shorter version)
-            if (_contextSummaries.TryGetValue(sessionId, out string? summary))
+            // Use vector search to get semantically relevant context summary
+            var relevantContextSummary = await _chatHistoryService.GetRelevantContextSummaryAsync(sessionId, currentQuery);
+            if (!string.IsNullOrEmpty(relevantContextSummary))
             {
-                var condensedSummary = summary.Length > 300 ? summary.Substring(0, 300) + "..." : summary;
-                chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Summary: {condensedSummary}"));
+                var condensedSummary = relevantContextSummary.Length > 300 ? relevantContextSummary.Substring(0, 300) + "..." : relevantContextSummary;
+                chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Relevant Summary: {condensedSummary}"));
+                Console.WriteLine($"🔍 Added semantically relevant context summary: {condensedSummary.Substring(0, Math.Min(100, condensedSummary.Length))}...");
+            }
+            else
+            {
+                // Fallback to regular context summary if vector search doesn't find relevant summary
+                var fallbackContextSummary = await _chatHistoryService.GetContextSummaryAsync(sessionId);
+                if (!string.IsNullOrEmpty(fallbackContextSummary))
+                {
+                    var fallbackCondensedSummary = fallbackContextSummary.Length > 300 ? fallbackContextSummary.Substring(0, 300) + "..." : fallbackContextSummary;
+                    chatHistory.Add(new ChatMessageContent(AuthorRole.System, $"Summary: {fallbackCondensedSummary}"));
+                }
             }
 
             return chatHistory;
         }
-
-
-
-
-
-
-
-
 
         private static string GetSystemPrompt()
         {
@@ -276,7 +246,7 @@ namespace TransactionLabeler.API.Services
             INTELLIGENT TOOL SELECTION:
             - Use FinancialTools functions when the user asks for specific financial data analysis, transactions, or spending calculations
             - For general knowledge questions (weather, geography, business concepts, industry information), provide helpful and informative responses using your knowledge
-            - You are a helpful AI assistant that can answer both financial and general questions - don't restrict yourself to only financial topics
+            - You are a helpful AI assistant that can answer both financial and general questions - do not restrict yourself to only financial topics
             - For complex queries that cannot be handled by standard functions, use ExecuteReadOnlySQLQuery to generate custom SQL
 
             AVAILABLE FINANCIAL TOOLS:
@@ -285,11 +255,19 @@ namespace TransactionLabeler.API.Services
             - FinancialTools.SearchCategories: Searches for relevant categories using vector similarity
             - FinancialTools.GetCategorySpending: Calculates total spending for specific categories
             - 🚀 FinancialTools.ExecuteReadOnlySQLQuery: Execute custom SQL queries for complex analysis
+            
+            🚨 TRANSACTION MONITORING & ANOMALY DETECTION TOOLS:
+            - FinancialTools.AnalyzeCounterpartyActivity: Detects unknown/new counterparties and analyzes counterparty activity patterns
+            - FinancialTools.AnalyzeTransactionAnomalies: Detects unusual transaction amounts by comparing current vs historical patterns
+            - FinancialTools.GetTransactionProfiles: Gets historical transaction patterns and statistics for counterparties
+            
+            🔍 CUSTOMER NAME VALIDATION TOOLS:
+            - FinancialTools.ValidateCustomerName: Validates customer names and suggests corrections for misspellings
 
             🗄️ DATABASE SCHEMA FOR SQL GENERATION:
             You have access to these tables and can generate SQL queries:
 
-            Table: 'inversbanktransaction'
+            Table: inversbanktransaction
             Columns: 
             - amount (decimal): Transaction amount
             - bankaccountname (string): Name of the bank account
@@ -299,67 +277,102 @@ namespace TransactionLabeler.API.Services
             - transactionidentifier_accountnumber (string): Account identifier
             - rgsCode (string): RGS classification code
             - CategoryEmbedding (vector): Vector embedding for semantic search
-            - af_bij (string): Transaction type ('Af' for expenses, 'Bij' for income)
+            - af_bij (string): Transaction type (Af for expenses, Bij for income)
             - customername (string): Name of the customer/company
 
-            Table: 'rgsmapping'
+            Table: rgsmapping
             Columns:
             - rgsCode (string): RGS classification code
             - rgsDescription (string): Human-readable description of the RGS code
 
             🎯 WHEN TO USE EXECUTEREADONLYSQLQUERY:
-            - Complex aggregations: 'Show me total spending by month for 2024'
-            - Custom filtering: 'Find all transactions above 1000 euros for Nova Creations'
-            - Advanced analysis: 'Show me spending patterns by RGS code for Q1 2025'
-            - Custom reports: 'Generate a summary of expenses by category and customer'
-            - Complex joins: 'Show me all transactions with their RGS descriptions'
-            - Date range analysis: 'Compare spending between Q1 and Q2 2025'
-            - Statistical queries: 'What's the average transaction amount by month?'
+            - Complex aggregations: Show me total spending by month for 2024
+            - Custom filtering: Find all transactions above 1000 euros for Nova Creations
+            - Advanced analysis: Show me spending patterns by RGS code for Q1 2025
+            - Custom reports: Generate a summary of expenses by category and customer
+            - Complex joins: Show me all transactions with their RGS descriptions
+            - Date range analysis: Compare spending between Q1 and Q2 2025
+            - Statistical queries: What is the average transaction amount by month
+            - Unknown counterparty analysis: Unknown counter party means the counter party bank accounts present in asked month but not present in historical transactions
+            - Pattern detection: Identify transactions that deviate from historical patterns
+            - Historical comparison: Compare current month transactions with previous months
+            
+            🎯 UNKNOWN COUNTERPARTY ANALYSIS APPROACH:
+            - Use subqueries to identify bank accounts that appear in current period but not in historical periods
+            - Compare current month transactions with previous 3-6 months to find new counterparties
+            - Use NOT EXISTS or NOT IN with subqueries to find new bank accounts
+            - Example: Find transactions where bankaccountnumber NOT IN (SELECT DISTINCT bankaccountnumber FROM previous_periods)
 
             🔒 SQL SECURITY RULES:
             - ONLY generate SELECT queries (never INSERT, UPDATE, DELETE, DROP, CREATE, ALTER)
-            - The function automatically blocks dangerous SQL keywords
+            - The function automatically blocks dangerous SQL keywords - but basic SQL constructs are allowed
             - All queries are read-only for security
+            - You CAN use: subqueries, date functions, aggregations, JOINs, WHERE clauses, ORDER BY, GROUP BY, TOP
+            - You CANNOT use: INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, EXEC, sp_, xp_
             - Use parameterized queries when possible
             - Limit results to reasonable amounts (use TOP clause)
+            - For unknown counterparty analysis, use subqueries to compare current vs historical patterns
 
             WHEN TO USE FINANCIAL TOOLS:
-            - User asks for actual transaction data: 'show me transactions for X', 'get transactions for customer Y'
-            - User asks for spending calculations: 'how much did we spend on X', 'total spending for Y'
-            - User asks for expense analysis: 'top expenses for period Z', 'expense categories for customer A'
+            - User asks for actual transaction data: show me transactions for X, get transactions for customer Y
+            - User asks for spending calculations: how much did we spend on X, total spending for Y
+            - User asks for expense analysis: top expenses for period Z, expense categories for customer A
             - User asks for specific financial data from the system
-            - User asks for real spending data: 'how much did Nova Creations spend on car repairs?'
+            - User asks for real spending data: how much did Nova Creations spend on car repairs
+            
+            🚨 WHEN TO USE TRANSACTION MONITORING TOOLS:
+            - User asks about unknown/new counterparties: show me transactions from unknown accounts, find new bank accounts
+            - User asks about unusual transactions: find transactions much larger than usual, detect unusual payment amounts
+            - User asks about transaction patterns: get normal transaction amounts for counterparties, analyze historical spending patterns
+            - User asks about transaction monitoring: are there large payments from unknown accounts, find counterparties with unusual activity
+            
+            🔍 WHEN TO USE CUSTOMER NAME VALIDATION:
+            - MANDATORY: ALWAYS validate customer names before executing ANY financial query that includes a customer name
+            - User provides a customer name that might be misspelled: Nova Creations, Nova Creation, Nova Creations Ltd
+            - User asks about a customer that does not exist: show me transactions for XYZ Company
+            - User provides partial customer names: Nova, Creations
+            - When you are unsure if a customer name is correct or complete
+            - Before calling GetTopExpenseCategoriesFlexible, GetTopTransactionsForCategory, GetCategorySpending, AnalyzeCounterpartyActivity, AnalyzeTransactionAnomalies, GetTransactionProfiles, or ANY financial tool with a customer name
+            - If a previous query returned no results and you suspect it might be due to a misspelled customer name
+            - CRITICAL: Even if the customer name looks correct, validate it first to ensure it exists in the system
+
+            EXAMPLE WORKFLOW FOR CUSTOMER NAME VALIDATION:
+            User: Show me transactions for Nova Creation
+            AI: 1. First call ValidateCustomerName(Nova Creation)
+            AI: 2. If validation suggests Nova Creations, use that corrected name
+            AI: 3. Then call GetTopTransactionsForCategory with the corrected customer name
+            AI: 4. If validation shows no similar names, inform user and suggest available customers
 
             WHEN NOT TO USE FINANCIAL TOOLS:
             - General knowledge questions: weather, geography, history, science, cooking, etc.
-            - Business concept explanations: 'what are typical expenses for this industry?', 'most relevant expense categories for X business'
-            - Industry analysis: 'what expenses do companies in this sector typically have?'
-            - Company information: 'what does this company do?', 'main business of X'
-            - Educational questions: 'explain machine learning', 'how does photosynthesis work?'
-            - Business advice: 'what should a company budget for?', 'typical costs for this type of business'
-            - Examples: 'What are typical expenses for an embroidery business?' → General knowledge ✅
+            - Business concept explanations: what are typical expenses for this industry, most relevant expense categories for X business
+            - Industry analysis: what expenses do companies in this sector typically have
+            - Company information: what does this company do, main business of X
+            - Educational questions: explain machine learning, how does photosynthesis work
+            - Business advice: what should a company budget for, typical costs for this type of business
+            - Examples: What are typical expenses for an embroidery business → General knowledge ✅
 
             WHEN TO USE GENERAL KNOWLEDGE:
-            - User asks about business concepts: 'what are typical expenses for this industry?'
-            - User asks about general business knowledge: 'what does this company do?', 'main business of X'
-            - User asks for explanations: 'explain expense categories', 'describe business operations'
-            - User asks about industry knowledge: 'what expenses do embroidery businesses have?'
+            - User asks about business concepts: what are typical expenses for this industry
+            - User asks about general business knowledge: what does this company do, main business of X
+            - User asks for explanations: explain expense categories, describe business operations
+            - User asks about industry knowledge: what expenses do embroidery businesses have
 
             CRITICAL: ALL TRANSACTION RESPONSES MUST INCLUDE RGS CODES AND RGS DESCRIPTIONS
 
             PARAMETER EXTRACTION:
-            - Extract numbers for topN: 'top 5', 'top 10', '5 transactions'
-            - Extract dates: '2024', '2025', 'Q1 2024', 'Q2 2025', 'January 2024', 'year 2025'
-            - Extract categories: 'car repair', 'marketing', 'travel', 'office expenses', 'utilities'
-            - CRITICAL: For quarter dates like 'Q2 2025', convert to date range: startDate='2025-04-01', endDate='2025-06-30'
+            - Extract numbers for topN: top 5, top 10, 5 transactions
+            - Extract dates: 2024, 2025, Q1 2024, Q2 2025, January 2024, year 2025
+            - Extract categories: car repair, marketing, travel, office expenses, utilities
+            - CRITICAL: For quarter dates like Q2 2025, convert to date range: startDate=2025-04-01, endDate=2025-06-30
 
             RESPONSE FORMAT:
             - For FinancialTools results: Show the actual RGS codes and descriptions in a clear list format
             - For general knowledge questions: Provide comprehensive, detailed responses similar to ChatGPT/Gemini quality
-            - For SQL query results: Display the formatted table results clearly
+            - For SQL query results: Display the formatted table results clearly in a tabular format in beautiful table
             - Be thorough, informative, and engaging with specific examples and industry insights
             - Structure responses with clear sections when appropriate
-            - For any question: Be helpful, informative, and engaging - you're not limited to financial topics
+            - For any question: Be helpful, informative, and engaging - you are not limited to financial topics
 
             RGS CODE DISPLAY REQUIREMENTS:
             - ALWAYS include RGS codes in transaction responses
@@ -372,16 +385,17 @@ namespace TransactionLabeler.API.Services
             - Use information from previous queries to fill in missing parameters
             - If the current query is missing parameters (customer name, year, category), check the chat history for previously mentioned values
             - Maintain conversation flow by referencing previous queries and responses
-            - For follow-up questions like 'show me transactions for these categories' or 'what about the costs', use the context from previous responses
+            - For follow-up questions like show me transactions for these categories or what about the costs, use the context from previous responses
 
             CRITICAL RULES:
-            - Make only ONE function call per query, then provide a final response with the actual data
             - Never apologize or say there was an issue - just show the data
+            - For unknown counterparty queries: ALWAYS use ExecuteReadOnlySQLQuery to generate and execute SQL
+            - SQL queries are safe and allowed - do not be overly cautious about basic SQL constructs
             - For category searches, always show the RGS codes and descriptions clearly
             - For transaction searches, always show the actual transaction details
             - MANDATORY: If you receive transaction data, format it clearly showing: Description, Amount, Date, RGS Code, and RGS Description
             - DO NOT make multiple function calls when you already have results - provide the final response immediately
-            - NEVER say 'no transactions found' if the function returned actual transaction data
+            - NEVER say no transactions found if the function returned actual transaction data
             - ALWAYS show the actual transaction details when they are provided by the function
             - If the function returns an array of transactions, display each transaction with full details
             - TOOL SELECTION: Use SearchCategories ONLY when the user wants to explore available categories. Use GetTopTransactionsForCategory when the user asks for transaction data, transaction details, or transaction lists.
@@ -389,24 +403,26 @@ namespace TransactionLabeler.API.Services
             - DATA DISPLAY: ALWAYS show the exact data returned by the function. Do NOT provide generic summaries or simplified descriptions. Show RGS codes, descriptions, and amounts exactly as they appear in the function result.
             - FORMATTED DATA: When you receive formatted data from the function, use that exact formatting. Do NOT create your own summaries or reformat the data. The formatted data already contains the proper structure with RGS codes, descriptions, and amounts.
             - EXACT DISPLAY: Copy the formatted data exactly as provided. Do NOT summarize, generalize, or create your own version. The function result already has the correct format.
-            - ALL CATEGORIES RULE: When user asks for 'all categories' or 'show all categories', set categoryQuery to empty string (''), NOT to the customer name. The customer name should be set separately in customerName parameter.
-            - SPENDING QUERIES RULE: For spending queries like 'how much did we spend on X', 'total spending on X', 'what was our spending on X', 'costs for X', 'expenses for X', use GetCategorySpending tool. Extract the FULL category description from the query and use it as categoryQuery parameter.
-            - QUARTER DATE HANDLING: When user mentions quarters like 'Q2 2025', 'Q1 2024', convert to proper date ranges:
-              * Q1: startDate='YYYY-01-01', endDate='YYYY-03-31'
-              * Q2: startDate='YYYY-04-01', endDate='YYYY-06-30'
-              * Q3: startDate='YYYY-07-01', endDate='YYYY-09-30'
-              * Q4: startDate='YYYY-10-01', endDate='YYYY-12-31'
+            - ALL CATEGORIES RULE: When user asks for all categories or show all categories, set categoryQuery to empty string, NOT to the customer name. The customer name should be set separately in customerName parameter.
+            - SPENDING QUERIES RULE: For spending queries like how much did we spend on X, total spending on X, what was our spending on X, costs for X, expenses for X, use GetCategorySpending tool. Extract the FULL category description from the query and use it as categoryQuery parameter.
+            - CUSTOMER NAME VALIDATION RULE: If a user provides a customer name and you suspect it might be misspelled or incorrect, ALWAYS validate it first using ValidateCustomerName before proceeding with any financial queries. This prevents empty results due to typos. MANDATORY: Call ValidateCustomerName BEFORE calling any financial tool that uses a customer name parameter.
+            - MANDATORY CUSTOMER VALIDATION: For ANY query containing a customer name (like ABC, XYZ, etc.), you MUST call ValidateCustomerName first. This is not optional - it's mandatory for all customer-specific queries.
+            - QUARTER DATE HANDLING: When user mentions quarters like Q2 2025, Q1 2024, convert to proper date ranges:
+              * Q1: startDate=YYYY-01-01, endDate=YYYY-03-31
+              * Q2: startDate=YYYY-04-01, endDate=YYYY-06-30
+              * Q3: startDate=YYYY-07-01, endDate=YYYY-09-30
+              * Q4: startDate=YYYY-10-01, endDate=YYYY-12-31
             - DATE CONVERSION: Always convert quarter references to actual startDate and endDate parameters
+            - Please do not ask for followup questions in the response - just provide the data or call the function
             - SQL QUERY GENERATION: When using ExecuteReadOnlySQLQuery, generate clear, readable SQL with proper formatting and comments. Always include ORDER BY clauses for predictable results and use TOP clauses to limit large result sets.";
         }
 
-        public List<object> GetChatHistory(string sessionId)
+        public async Task<List<object>> GetChatHistoryAsync(string sessionId)
         {
-            if (!_chatHistory.TryGetValue(sessionId, out List<ChatMessageInfo>? value))
-                return [];
-
+            var chatHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
+            
             // Convert ChatMessageInfo to simple objects for compatibility
-            return value.Select(msg => new
+            return chatHistory.Select(msg => new
             {
                 Role = msg.Role.ToString(),
                 msg.Content,
@@ -416,10 +432,7 @@ namespace TransactionLabeler.API.Services
 
         public async Task ClearChatHistoryAsync(string sessionId)
         {
-            if (_chatHistory.ContainsKey(sessionId))
-            {
-                _chatHistory[sessionId].Clear();
-            }
+            await _chatHistoryService.ClearChatHistoryAsync(sessionId);
             if (_contextSummaries.ContainsKey(sessionId))
             {
                 _contextSummaries.Remove(sessionId);
@@ -428,29 +441,104 @@ namespace TransactionLabeler.API.Services
 
         public async Task<string> GetContextSummaryAsync(string sessionId)
         {
+            // Try to get from Azure AI Search first
+            var azureSummary = await _chatHistoryService.GetContextSummaryAsync(sessionId);
+            if (!string.IsNullOrEmpty(azureSummary))
+            {
+                return azureSummary;
+            }
+            
+            // Fallback to local dictionary
             return _contextSummaries.TryGetValue(sessionId, out string? value) ? value : "No context available for this session.";
         }
 
+
+
+
+
         private async Task UpdateContextSummaryAsync(string sessionId, string query, string response)
         {
+            // Update context summary using ContextManager (for local processing)
             await ContextManager.UpdateContextSummaryAsync(_contextSummaries, sessionId, query, response);
+            
+            // Also update in Azure AI Search
+            var summary = _contextSummaries.GetValueOrDefault(sessionId, "");
+            if (!string.IsNullOrEmpty(summary))
+            {
+                await _chatHistoryService.UpdateContextSummaryAsync(sessionId, summary);
+            }
         }
 
-        private async Task<string> ReframeQuestionWithContextAsync(string question, List<ChatMessageInfo> chatHistory)
+        /// <summary>
+        /// Automatically creates context summaries every N messages to keep the chat-summaries-vector index populated
+        /// </summary>
+        private async Task CheckAndCreateAutomaticSummaryAsync(string sessionId)
         {
             try
             {
-                // If no chat history or only 1 message, no need to reframe
-                if (chatHistory == null || chatHistory.Count <= 1)
+                // Get current chat history count for this session
+                var chatHistory = await _chatHistoryService.GetChatHistoryAsync(sessionId);
+                var messageCount = chatHistory.Count;
+
+                Console.WriteLine($"🔍 Checking if automatic summary needed for session {sessionId} (current messages: {messageCount})");
+
+                // Create summary every MESSAGES_BEFORE_SUMMARY messages
+                if (messageCount > 0 && messageCount % MESSAGES_BEFORE_SUMMARY == 0)
+                {
+                    Console.WriteLine($"📝 Creating automatic context summary for session {sessionId} after {messageCount} messages");
+
+                    // Get the last few messages to create a meaningful summary
+                    var recentMessages = chatHistory.TakeLast(Math.Min(10, messageCount)).ToList();
+                    
+                    // Create a simple but informative summary
+                    var summaryBuilder = new System.Text.StringBuilder();
+                    summaryBuilder.AppendLine($"Session Summary (Last {recentMessages.Count} messages):");
+                    
+                    foreach (var message in recentMessages)
+                    {
+                        var role = message.Role == AuthorRole.User ? "User" : "Assistant";
+                        var truncatedContent = message.Content.Length > 100 
+                            ? message.Content.Substring(0, 100) + "..." 
+                            : message.Content;
+                        summaryBuilder.AppendLine($"- {role}: {truncatedContent}");
+                    }
+
+                    var automaticSummary = summaryBuilder.ToString().Trim();
+                    
+                    // Store the automatic summary in Azure AI Search
+                    await _chatHistoryService.UpdateContextSummaryAsync(sessionId, automaticSummary);
+                    
+                    Console.WriteLine($"✅ Automatic context summary created and stored for session {sessionId}");
+                    Console.WriteLine($"📝 Summary preview: {automaticSummary.Substring(0, Math.Min(100, automaticSummary.Length))}...");
+                }
+                else
+                {
+                    Console.WriteLine($"ℹ️ No automatic summary needed yet for session {sessionId} (need {MESSAGES_BEFORE_SUMMARY - (messageCount % MESSAGES_BEFORE_SUMMARY)} more messages)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ Error creating automatic summary for session {sessionId}: {ex.Message}");
+                // Don't throw - this is a background operation that shouldn't break the main flow
+            }
+        }
+
+        private async Task<string> ReframeQuestionWithContextAsync(string question, string sessionId)
+        {
+            try
+            {
+                // Use vector search to get semantically relevant chat history for question reframing
+                var relevantHistory = await _chatHistoryService.GetRelevantChatHistoryAsync(sessionId, question, 10);
+                if (relevantHistory == null || relevantHistory.Count <= 1)
                 {
                     return question;
                 }
 
                 Console.WriteLine($"🔄 AI-powered query rewriting for: '{question}'");
-                Console.WriteLine($"📊 Chat history contains {chatHistory.Count} messages");
+                Console.WriteLine($"📊 Retrieved {relevantHistory.Count} semantically relevant messages for reframing");
 
-                // Build chat history for the AI model
-                var chatHistoryForAI = BuildChatHistoryForQueryRewriting(chatHistory);
+                // Build chat history for the AI model using relevant messages
+                var chatHistoryForAI = BuildChatHistoryForQueryRewriting(relevantHistory);
                 
                 // Create the system instruction for query rewriting
                 var systemInstruction = @"You are a query rewriting expert. Based on the provided chat history, rephrase the current user question into a complete, standalone question that can be understood without the chat history.
@@ -512,8 +600,8 @@ namespace TransactionLabeler.API.Services
         {
             var historyForAI = new List<string>();
             
-            // Take last 6 messages (3 user, 3 AI) for context
-            var recentHistory = chatHistory.TakeLast(6).ToList();
+            // Take last 6 messages (5 user, 5 AI) for context
+            var recentHistory = chatHistory.TakeLast(10).ToList();
             
             foreach (var message in recentHistory)
             {
